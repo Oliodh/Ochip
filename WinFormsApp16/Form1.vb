@@ -31,6 +31,93 @@ Public Class Form1
         _frameTimer.Start()
     End Sub
 
+    Private Shared Function TryMapToChip8Key(keyCode As Keys, ByRef chip8Key As Integer) As Boolean
+        ' Standard CHIP-8 keyboard layout:
+        ' 1 2 3 C
+        ' 4 5 6 D
+        ' 7 8 9 E
+        ' A 0 B F
+        '
+        ' Typical PC mapping:
+        ' 1 2 3 4
+        ' Q W E R
+        ' A S D F
+        ' Z X C V
+
+        Select Case keyCode
+            Case Keys.D1 : chip8Key = &H1 : Return True
+            Case Keys.D2 : chip8Key = &H2 : Return True
+            Case Keys.D3 : chip8Key = &H3 : Return True
+            Case Keys.D4 : chip8Key = &HC : Return True
+
+            Case Keys.Q : chip8Key = &H4 : Return True
+            Case Keys.W : chip8Key = &H5 : Return True
+            Case Keys.E : chip8Key = &H6 : Return True
+            Case Keys.R : chip8Key = &HD : Return True
+
+            Case Keys.A : chip8Key = &H7 : Return True
+            Case Keys.S : chip8Key = &H8 : Return True
+            Case Keys.D : chip8Key = &H9 : Return True
+            Case Keys.F : chip8Key = &HE : Return True
+
+            Case Keys.Z : chip8Key = &HA : Return True
+            Case Keys.X : chip8Key = &H0 : Return True
+            Case Keys.C : chip8Key = &HB : Return True
+            Case Keys.V : chip8Key = &HF : Return True
+
+            ' Extra convenience: arrow keys often expected by games like Pong.
+            ' Right paddle: Up/Down -> C/D (common convention)
+            Case Keys.Up : chip8Key = &HC : Return True
+            Case Keys.Down : chip8Key = &HD : Return True
+
+            ' Extra convenience: left paddle with Left/Right -> 1/4 (common convention)
+            Case Keys.Left : chip8Key = &H1 : Return True
+            Case Keys.Right : chip8Key = &H4 : Return True
+        End Select
+
+        chip8Key = -1
+        Return False
+    End Function
+
+    Private Sub SetChip8KeyState(keyCode As Keys, isDown As Boolean)
+        Dim chip8Key As Integer
+        If TryMapToChip8Key(keyCode, chip8Key) Then
+            _chip8.SetKey(chip8Key, isDown)
+        End If
+    End Sub
+
+    Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
+        Dim keyCode As Keys = keyData And Keys.KeyCode
+
+        Dim chip8Key As Integer
+        If TryMapToChip8Key(keyCode, chip8Key) Then
+            _chip8.SetKey(chip8Key, True)
+            Return True
+        End If
+
+        Return MyBase.ProcessCmdKey(msg, keyData)
+    End Function
+
+    Protected Overrides Sub OnKeyDown(e As KeyEventArgs)
+        MyBase.OnKeyDown(e)
+
+        Dim chip8Key As Integer
+        If TryMapToChip8Key(e.KeyCode, chip8Key) Then
+            _chip8.SetKey(chip8Key, True)
+            e.Handled = True
+        End If
+    End Sub
+
+    Protected Overrides Sub OnKeyUp(e As KeyEventArgs)
+        MyBase.OnKeyUp(e)
+
+        Dim chip8Key As Integer
+        If TryMapToChip8Key(e.KeyCode, chip8Key) Then
+            _chip8.SetKey(chip8Key, False)
+            e.Handled = True
+        End If
+    End Sub
+
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
         Using ofd As New OpenFileDialog()
             ofd.Title = "Open CHIP-8 ROM"
@@ -103,35 +190,6 @@ Public Class Form1
                 End If
             Next
         Next
-    End Sub
-
-    Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
-        Dim keyCode As Keys = keyData And Keys.KeyCode
-
-        Select Case keyCode
-            Case Keys.Up
-                _chip8.SetKey(&HC, True)
-                Return True
-
-            Case Keys.Down
-                _chip8.SetKey(&HD, True)
-                Return True
-        End Select
-
-        Return MyBase.ProcessCmdKey(msg, keyData)
-    End Function
-
-    Protected Overrides Sub OnKeyUp(e As KeyEventArgs)
-        MyBase.OnKeyUp(e)
-
-        Select Case e.KeyCode
-            Case Keys.Up
-                _chip8.SetKey(&HC, False)
-                e.Handled = True
-            Case Keys.Down
-                _chip8.SetKey(&HD, False)
-                e.Handled = True
-        End Select
     End Sub
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles Me.Load
