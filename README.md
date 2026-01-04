@@ -76,7 +76,7 @@ The emulator currently maps some keyboard keys to CHIP-8's hexadecimal keypad:
 
 - **Display Resolution**: 64x32 pixels
 - **Display Scale**: 10x (640x320 window)
-- **CPU Cycles**: 12 cycles per frame
+- **CPU Cycles**: 500 cycles per frame
 - **Frame Rate**: 60 Hz (~16.67ms per frame)
 - **Memory**: 4096 bytes (4KB)
 - **Program Counter Start**: 0x200

@@ -10,7 +10,7 @@ Public Class Form1
     Private ReadOnly _frameTimer As New Timer()
 
     Private Const Scale As Integer = 10
-    Private Const CyclesPerFrame As Integer = 12
+    Private Const CyclesPerFrame As Integer = 500
 
     Private _isPaused As Boolean
     Private _lastRomPath As String
