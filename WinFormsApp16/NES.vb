@@ -200,13 +200,13 @@ Public NotInheritable Class NES
         End Sub
 
         Private Sub Push(value As Byte)
-            _memory.Write(CUShort(&H100US + SP), value)
+            _memory.Write(CUShort(&H100US + CUShort(SP)), value)
             SP = CByte((SP - 1) And &HFF)
         End Sub
 
         Private Function Pop() As Byte
             SP = CByte((SP + 1) And &HFF)
-            Return _memory.Read(CUShort(&H100US + SP))
+            Return _memory.Read(CUShort(&H100US + CUShort(SP)))
         End Function
     End Class
 
