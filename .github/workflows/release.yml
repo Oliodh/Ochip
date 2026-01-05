@@ -1,0 +1,45 @@
+name: Build and Attach Windows Executables
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      
+      - name: Restore dependencies
+        run: dotnet restore WinFormsApp16/WinFormsApp16.vbproj
+      
+      - name: Build and publish Windows x64 executable
+        run: |
+          dotnet publish WinFormsApp16/WinFormsApp16.vbproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            --output ./publish
+      
+      - name: Create release archive
+        run: |
+          Compress-Archive -Path ./publish/WinFormsApp16.exe -DestinationPath ./Ochip-Windows-x64.zip
+      
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./Ochip-Windows-x64.zip
+          asset_name: Ochip-Windows-x64.zip
+          asset_content_type: application/zip
