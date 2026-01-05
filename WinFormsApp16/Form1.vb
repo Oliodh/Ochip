@@ -9,6 +9,7 @@ Public Class Form1
     Private ReadOnly _chip8 As New Chip8()
     Private ReadOnly _nes As New NES()
     Private ReadOnly _frameTimer As New Timer()
+    Private _nesBitmap As Bitmap
 
     Private Const Chip8Scale As Integer = 10
     Private Const CyclesPerFrame As Integer = 12
@@ -227,6 +228,11 @@ Public Class Form1
             Text = $"CHIP-8 Emulator - {Path.GetFileName(inPath)}"
             ' Resize window for CHIP-8
             ClientSize = New Size(Chip8.DisplayWidth * Chip8Scale, Chip8.DisplayHeight * Chip8Scale)
+            ' Dispose NES bitmap if switching from NES
+            If _nesBitmap IsNot Nothing Then
+                _nesBitmap.Dispose()
+                _nesBitmap = Nothing
+            End If
         Else
             _nes.Reset()
             _nes.LoadRom(inPath)
@@ -234,6 +240,11 @@ Public Class Form1
             Text = $"NES Emulator - {Path.GetFileName(inPath)}"
             ' Resize window for NES
             ClientSize = New Size(NES.DisplayWidth, NES.DisplayHeight)
+            ' Create persistent bitmap for NES rendering
+            If _nesBitmap IsNot Nothing Then
+                _nesBitmap.Dispose()
+            End If
+            _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
         End If
 
         _isPaused = False
@@ -283,19 +294,19 @@ Public Class Form1
                 Next
             Next
         Else
-            ' Render NES display
-            Using bmp As New Bitmap(NES.DisplayWidth, NES.DisplayHeight)
-                Dim bmpData As System.Drawing.Imaging.BitmapData = bmp.LockBits(
-                    New Rectangle(0, 0, bmp.Width, bmp.Height),
+            ' Render NES display using persistent bitmap
+            If _nesBitmap IsNot Nothing Then
+                Dim bmpData As System.Drawing.Imaging.BitmapData = _nesBitmap.LockBits(
+                    New Rectangle(0, 0, _nesBitmap.Width, _nesBitmap.Height),
                     System.Drawing.Imaging.ImageLockMode.WriteOnly,
                     System.Drawing.Imaging.PixelFormat.Format32bppArgb)
 
                 System.Runtime.InteropServices.Marshal.Copy(_nes.DisplayBuffer, 0, bmpData.Scan0, _nes.DisplayBuffer.Length)
-                bmp.UnlockBits(bmpData)
+                _nesBitmap.UnlockBits(bmpData)
 
                 e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
-                e.Graphics.DrawImage(bmp, 0, 0, ClientSize.Width, ClientSize.Height)
-            End Using
+                e.Graphics.DrawImage(_nesBitmap, 0, 0, ClientSize.Width, ClientSize.Height)
+            End If
         End If
     End Sub
 

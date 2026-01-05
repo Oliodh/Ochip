@@ -54,7 +54,7 @@ Public NotInheritable Class NES
     Public Sub ExecuteFrame()
         ' NES runs at ~60 Hz, execute one frame worth of cycles
         ' CPU runs at ~1.79 MHz, PPU at ~5.37 MHz
-        ' One frame = 29780.5 CPU cycles (262 scanlines * 113.667 cycles/scanline)
+        ' One frame = 29780.5 CPU cycles (calculated as: 262 scanlines * 113.667 cycles/scanline)
         Const CyclesPerFrame As Integer = 29781
 
         Dim cycles As Integer = 0
@@ -154,15 +154,19 @@ Public NotInheritable Class NES
                 Case &H20 ' JSR
                     Dim target As UShort = ReadWord(PC)
                     PC = CUShort(PC + 1US)
-                    Push(CByte(PC >> 8))
-                    Push(CByte(PC And &HFF))
+                    ' 6502 pushes PC-1 to stack (return address - 1)
+                    Dim returnAddr As UShort = CUShort(PC - 1US)
+                    Push(CByte(returnAddr >> 8))
+                    Push(CByte(returnAddr And &HFF))
                     PC = target
                     Return 6
 
                 Case &H60 ' RTS
+                    ' Pop low byte first, then high byte
                     Dim lo As Byte = Pop()
                     Dim hi As Byte = Pop()
                     PC = CUShort((CUShort(hi) << 8) Or lo)
+                    ' Add 1 to the return address (6502 convention)
                     PC = CUShort(PC + 1US)
                     Return 6
 
@@ -268,8 +272,14 @@ Public NotInheritable Class NES
                 Throw New InvalidOperationException("Invalid NES ROM file")
             End If
 
-            ' Check for "NES" + MS-DOS EOF marker
-            If romData(0) <> &H4E OrElse romData(1) <> &H45 OrElse romData(2) <> &H53 OrElse romData(3) <> &H1A Then
+            ' Check for "NES" + MS-DOS EOF marker (0x4E 0x45 0x53 0x1A)
+            Const INesSignature1 As Byte = &H4E  ' 'N'
+            Const INesSignature2 As Byte = &H45  ' 'E'
+            Const INesSignature3 As Byte = &H53  ' 'S'
+            Const INesSignature4 As Byte = &H1A  ' MS-DOS EOF
+            
+            If romData(0) <> INesSignature1 OrElse romData(1) <> INesSignature2 OrElse 
+               romData(2) <> INesSignature3 OrElse romData(3) <> INesSignature4 Then
                 Throw New InvalidOperationException("Not a valid iNES ROM file")
             End If
 
