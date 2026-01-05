@@ -127,7 +127,7 @@ Public NotInheritable Class NES
             Push(CByte(PC And &HFF))
             Push(CByte(P And (Not FlagB)))
             SetFlag(FlagI, True)
-            PC = CUShort(_memory.Read(&HFFFAUS) Or (CUShort(_memory.Read(&HFFFBUS)) << 8))
+            PC = CUShort(_memory.Read(&HFFFA) Or (CUShort(_memory.Read(&HFFFB)) << 8))
         End Sub
 
         Public Function ExecuteInstruction() As Integer
@@ -244,7 +244,7 @@ Public NotInheritable Class NES
                     PC = CUShort(PC + 1US)
                     Push(CByte(PC >> 8)) : Push(CByte(PC And &HFF))
                     Push(CByte(P Or FlagB)) : SetFlag(FlagI, True)
-                    PC = CUShort(_memory.Read(&HFFFEUS) Or (CUShort(_memory.Read(&HFFFFUS)) << 8))
+                    PC = CUShort(_memory.Read(&HFFFE) Or (CUShort(_memory.Read(&HFFFF)) << 8))
                     Return 7
 
                 ' CMP, CPX, CPY - Compare
