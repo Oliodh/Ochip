@@ -123,10 +123,12 @@ Public NotInheritable Class Chip8
                         
                     Case &HFEUS ' 00FE: Disable extended screen mode (SCHIP)
                         IsHighResMode = False
+                        Array.Clear(Display, 0, Display.Length)
                         DrawFlag = True
                         
                     Case &HFFUS ' 00FF: Enable extended screen mode (SCHIP)
                         IsHighResMode = True
+                        Array.Clear(Display, 0, Display.Length)
                         DrawFlag = True
                         
                     Case &HFBUS ' 00FB: Scroll right 4 pixels (SCHIP)
