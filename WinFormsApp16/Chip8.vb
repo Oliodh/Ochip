@@ -432,8 +432,8 @@ Public NotInheritable Class Chip8
         Dim width As Integer = DisplayWidth
         Dim height As Integer = DisplayHeight
         
-        ' Don't scroll if n is invalid or display is too small
-        If n <= 0 OrElse n >= height Then Return
+        ' Don't scroll if n is invalid (0 or negative, or larger than display)
+        If n <= 0 OrElse n > height Then Return
         
         ' Move pixels down from bottom to top
         For y As Integer = height - 1 To n Step -1
