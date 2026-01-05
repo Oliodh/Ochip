@@ -7,14 +7,22 @@ Imports System.Windows.Forms
 
 Public Class Form1
     Private ReadOnly _chip8 As New Chip8()
+    Private ReadOnly _nes As New NES()
     Private ReadOnly _frameTimer As New Timer()
+    Private _nesBitmap As Bitmap
 
-    Private Const Scale As Integer = 10
+    Private Const Chip8Scale As Integer = 10
     Private Const CyclesPerFrame As Integer = 12
 
     Private _isPaused As Boolean
     Private _lastRomPath As String
     Private _romLoaded As Boolean
+    Private _currentEmulator As EmulatorType = EmulatorType.Chip8
+
+    Private Enum EmulatorType
+        Chip8
+        NES
+    End Enum
 
     Public Sub New()
         InitializeComponent()
@@ -29,6 +37,13 @@ Public Class Form1
         _frameTimer.Interval = 1000 \ 60
         AddHandler _frameTimer.Tick, AddressOf OnFrameTick
         _frameTimer.Start()
+        
+        ' Handle form closing to clean up resources
+        AddHandler Me.FormClosing, AddressOf Form1_FormClosing
+    End Sub
+    
+    Private Sub Form1_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs)
+        _nesBitmap?.Dispose()
     End Sub
 
     Private Shared Function TryMapToChip8Key(keyCode As Keys, ByRef chip8Key As Integer) As Boolean
@@ -79,6 +94,32 @@ Public Class Form1
         Return False
     End Function
 
+    Private Shared Function TryMapToNESButton(keyCode As Keys, ByRef nesButton As Integer) As Boolean
+        ' NES Controller layout:
+        ' 0 = A
+        ' 1 = B
+        ' 2 = Select
+        ' 3 = Start
+        ' 4 = Up
+        ' 5 = Down
+        ' 6 = Left
+        ' 7 = Right
+
+        Select Case keyCode
+            Case Keys.X : nesButton = 0 : Return True     ' A
+            Case Keys.Z : nesButton = 1 : Return True     ' B
+            Case Keys.Back : nesButton = 2 : Return True  ' Select
+            Case Keys.Enter : nesButton = 3 : Return True ' Start
+            Case Keys.Up : nesButton = 4 : Return True
+            Case Keys.Down : nesButton = 5 : Return True
+            Case Keys.Left : nesButton = 6 : Return True
+            Case Keys.Right : nesButton = 7 : Return True
+        End Select
+
+        nesButton = -1
+        Return False
+    End Function
+
     Private Sub SetChip8KeyState(keyCode As Keys, isDown As Boolean)
         Dim chip8Key As Integer
         If TryMapToChip8Key(keyCode, chip8Key) Then
@@ -89,10 +130,18 @@ Public Class Form1
     Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
         Dim keyCode As Keys = keyData And Keys.KeyCode
 
-        Dim chip8Key As Integer
-        If TryMapToChip8Key(keyCode, chip8Key) Then
-            _chip8.SetKey(chip8Key, True)
-            Return True
+        If _currentEmulator = EmulatorType.Chip8 Then
+            Dim chip8Key As Integer
+            If TryMapToChip8Key(keyCode, chip8Key) Then
+                _chip8.SetKey(chip8Key, True)
+                Return True
+            End If
+        Else
+            Dim nesButton As Integer
+            If TryMapToNESButton(keyCode, nesButton) Then
+                _nes.SetController1Button(nesButton, True)
+                Return True
+            End If
         End If
 
         Return MyBase.ProcessCmdKey(msg, keyData)
@@ -101,41 +150,71 @@ Public Class Form1
     Protected Overrides Sub OnKeyDown(e As KeyEventArgs)
         MyBase.OnKeyDown(e)
 
-        Dim chip8Key As Integer
-        If TryMapToChip8Key(e.KeyCode, chip8Key) Then
-            _chip8.SetKey(chip8Key, True)
-            e.Handled = True
+        If _currentEmulator = EmulatorType.Chip8 Then
+            Dim chip8Key As Integer
+            If TryMapToChip8Key(e.KeyCode, chip8Key) Then
+                _chip8.SetKey(chip8Key, True)
+                e.Handled = True
+            End If
+        Else
+            Dim nesButton As Integer
+            If TryMapToNESButton(e.KeyCode, nesButton) Then
+                _nes.SetController1Button(nesButton, True)
+                e.Handled = True
+            End If
         End If
     End Sub
 
     Protected Overrides Sub OnKeyUp(e As KeyEventArgs)
         MyBase.OnKeyUp(e)
 
-        Dim chip8Key As Integer
-        If TryMapToChip8Key(e.KeyCode, chip8Key) Then
-            _chip8.SetKey(chip8Key, False)
-            e.Handled = True
+        If _currentEmulator = EmulatorType.Chip8 Then
+            Dim chip8Key As Integer
+            If TryMapToChip8Key(e.KeyCode, chip8Key) Then
+                _chip8.SetKey(chip8Key, False)
+                e.Handled = True
+            End If
+        Else
+            Dim nesButton As Integer
+            If TryMapToNESButton(e.KeyCode, nesButton) Then
+                _nes.SetController1Button(nesButton, False)
+                e.Handled = True
+            End If
         End If
     End Sub
 
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
         Using ofd As New OpenFileDialog()
-            ofd.Title = "Open CHIP-8 ROM"
-            ofd.Filter = "CHIP-8 ROMs|*.ch8;*.c8;*.rom;*.*"
+            ofd.Title = "Open ROM"
+            ofd.Filter = "All ROMs|*.ch8;*.c8;*.rom;*.nes|CHIP-8 ROMs|*.ch8;*.c8;*.rom|NES ROMs|*.nes|All Files|*.*"
             ofd.InitialDirectory = If(String.IsNullOrWhiteSpace(_lastRomPath), Application.StartupPath, Path.GetDirectoryName(_lastRomPath))
 
             If ofd.ShowDialog(Me) <> DialogResult.OK Then Return
 
             _lastRomPath = ofd.FileName
             _romLoaded = True
+
+            ' Detect emulator type by file extension
+            Dim ext As String = Path.GetExtension(_lastRomPath).ToLowerInvariant()
+            If ext = ".nes" Then
+                _currentEmulator = EmulatorType.NES
+            Else
+                _currentEmulator = EmulatorType.Chip8
+            End If
+
             LoadAndStartRom(_lastRomPath)
         End Using
     End Sub
 
     Private Sub ButtonReset_Click(sender As Object, e As EventArgs) Handles ButtonReset.Click
         If String.IsNullOrWhiteSpace(_lastRomPath) OrElse Not File.Exists(_lastRomPath) Then
-            _chip8.Reset()
-            _chip8.DrawFlag = True
+            If _currentEmulator = EmulatorType.Chip8 Then
+                _chip8.Reset()
+                _chip8.DrawFlag = True
+            Else
+                _nes.Reset()
+                _nes.DrawFlag = True
+            End If
             Invalidate()
             Return
         End If
@@ -149,47 +228,93 @@ Public Class Form1
     End Sub
 
     Private Sub LoadAndStartRom(inPath As String)
-        _chip8.Reset()
-        _chip8.LoadRom(inPath)
+        If _currentEmulator = EmulatorType.Chip8 Then
+            _chip8.Reset()
+            _chip8.LoadRom(inPath)
+            _chip8.DrawFlag = True
+            Text = $"CHIP-8 Emulator - {Path.GetFileName(inPath)}"
+            ' Resize window for CHIP-8
+            ClientSize = New Size(Chip8.DisplayWidth * Chip8Scale, Chip8.DisplayHeight * Chip8Scale)
+            ' Dispose NES bitmap if switching from NES
+            If _nesBitmap IsNot Nothing Then
+                _nesBitmap.Dispose()
+                _nesBitmap = Nothing
+            End If
+        Else
+            _nes.Reset()
+            _nes.LoadRom(inPath)
+            _nes.DrawFlag = True
+            Text = $"NES Emulator - {Path.GetFileName(inPath)}"
+            ' Resize window for NES
+            ClientSize = New Size(NES.DisplayWidth, NES.DisplayHeight)
+            ' Create persistent bitmap for NES rendering
+            If _nesBitmap IsNot Nothing Then
+                _nesBitmap.Dispose()
+            End If
+            _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+        End If
 
-        Text = $"CHIP-8 - {Path.GetFileName(inPath)}"
         _isPaused = False
         ButtonPause.Text = "Pause"
-
-        _chip8.DrawFlag = True
         Invalidate()
     End Sub
 
     Private Sub OnFrameTick(sender As Object, e As EventArgs)
         If Not _romLoaded OrElse _isPaused Then Return
 
-        For i As Integer = 0 To CyclesPerFrame - 1
-            _chip8.ExecuteCycle()
-        Next
+        If _currentEmulator = EmulatorType.Chip8 Then
+            For i As Integer = 0 To CyclesPerFrame - 1
+                _chip8.ExecuteCycle()
+            Next
 
-        _chip8.TickTimers()
+            _chip8.TickTimers()
 
-        If _chip8.DrawFlag Then
-            _chip8.DrawFlag = False
-            Invalidate()
+            If _chip8.DrawFlag Then
+                _chip8.DrawFlag = False
+                Invalidate()
+            End If
+        Else
+            _nes.ExecuteFrame()
+
+            If _nes.DrawFlag Then
+                _nes.DrawFlag = False
+                Invalidate()
+            End If
         End If
     End Sub
 
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
         MyBase.OnPaint(e)
 
-        e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
-        e.Graphics.PixelOffsetMode = PixelOffsetMode.Half
         e.Graphics.Clear(Color.Black)
 
-        For y As Integer = 0 To Chip8.DisplayHeight - 1
-            For x As Integer = 0 To Chip8.DisplayWidth - 1
-                Dim idx As Integer = (y * Chip8.DisplayWidth) + x
-                If _chip8.Display(idx) Then
-                    e.Graphics.FillRectangle(Brushes.White, x * Scale, y * Scale, Scale, Scale)
-                End If
+        If _currentEmulator = EmulatorType.Chip8 Then
+            e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half
+
+            For y As Integer = 0 To Chip8.DisplayHeight - 1
+                For x As Integer = 0 To Chip8.DisplayWidth - 1
+                    Dim idx As Integer = (y * Chip8.DisplayWidth) + x
+                    If _chip8.Display(idx) Then
+                        e.Graphics.FillRectangle(Brushes.White, x * Chip8Scale, y * Chip8Scale, Chip8Scale, Chip8Scale)
+                    End If
+                Next
             Next
-        Next
+        Else
+            ' Render NES display using persistent bitmap
+            If _nesBitmap IsNot Nothing Then
+                Dim bmpData As System.Drawing.Imaging.BitmapData = _nesBitmap.LockBits(
+                    New Rectangle(0, 0, _nesBitmap.Width, _nesBitmap.Height),
+                    System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                    System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+
+                System.Runtime.InteropServices.Marshal.Copy(_nes.DisplayBuffer, 0, bmpData.Scan0, _nes.DisplayBuffer.Length)
+                _nesBitmap.UnlockBits(bmpData)
+
+                e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
+                e.Graphics.DrawImage(_nesBitmap, 0, 0, ClientSize.Width, ClientSize.Height)
+            End If
+        End If
     End Sub
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles Me.Load

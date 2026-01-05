@@ -1,9 +1,10 @@
-# Ochip - CHIP-8 Emulator
+# Ochip - Multi-System Emulator
 
-A CHIP-8 emulator written in Visual Basic .NET using Windows Forms. This emulator provides an accurate implementation of the classic CHIP-8 virtual machine, allowing you to run classic CHIP-8 games and programs.
+A multi-system emulator written in Visual Basic .NET using Windows Forms. This emulator provides accurate implementations of classic gaming systems, starting with CHIP-8 and NES (Nintendo Entertainment System).
 
-## About CHIP-8
+## Supported Systems
 
+### CHIP-8
 CHIP-8 is an interpreted programming language developed in the mid-1970s. It was initially used on the COSMAC VIP and Telmac 1800 8-bit microcomputers to make game programming easier. CHIP-8 programs run on a CHIP-8 virtual machine with:
 - 4KB of memory
 - 16 general-purpose 8-bit registers (V0-VF)
@@ -11,17 +12,34 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 - 16-key hexadecimal keypad
 - Simple sound timer
 
+### NES (Nintendo Entertainment System)
+The NES is an 8-bit home video game console released by Nintendo in 1983. The emulator supports:
+- 6502 CPU emulation
+- PPU (Picture Processing Unit) for graphics rendering
+- 256x240 display resolution
+- Controller input (8 buttons)
+- iNES ROM format (.nes files)
+
 ## Features
 
-- **Full CHIP-8 instruction set implementation** - Supports all standard CHIP-8 opcodes
-- **64x32 pixel display** - Monochrome graphics with configurable scaling
-- **ROM loading** - Load and run CHIP-8 ROM files (.ch8, .c8, .rom)
+- **Multi-system emulation** - Supports both CHIP-8 and NES systems
+- **Automatic ROM detection** - Automatically detects system type based on file extension
+- **CHIP-8 Features**:
+  - Full CHIP-8 instruction set implementation
+  - 64x32 pixel display with configurable scaling
+  - ROM loading (.ch8, .c8, .rom files)
+  - Accurate 60 Hz timing
+  - Full keyboard input support
+- **NES Features**:
+  - 6502 CPU emulation
+  - PPU (Picture Processing Unit) for graphics
+  - 256x240 display resolution
+  - iNES ROM format support (.nes files)
+  - Controller input mapping
 - **Emulation controls**:
   - Load ROM file via file picker
   - Reset emulation
   - Pause/Resume execution
-- **Accurate timing** - 60 Hz frame rate with configurable cycles per frame
-- **Keyboard input support** - Maps keyboard keys to CHIP-8 hexadecimal keypad
 
 ## Requirements
 
@@ -46,9 +64,12 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 ## Running
 
 1. Run the application from Visual Studio (F5) or execute the built executable
-2. Click the "Choose ROM..." button to select a CHIP-8 ROM file
-3. The emulator will load and start running the ROM automatically
-4. Use the control buttons:
+2. Click the "Choose ROM..." button to select a ROM file
+3. The emulator will automatically detect the system type:
+   - `.ch8`, `.c8`, `.rom` files → CHIP-8 emulator
+   - `.nes` files → NES emulator
+4. The ROM will load and start running automatically
+5. Use the control buttons:
    - **Reset**: Restart the currently loaded ROM
    - **Pause/Resume**: Pause or resume emulation
 
@@ -56,23 +77,50 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 
 ### Loading ROMs
 
-Click the "Choose ROM..." button and select a CHIP-8 ROM file. The emulator supports the following file extensions:
+Click the "Choose ROM..." button and select a ROM file. The emulator supports:
+
+**CHIP-8 ROMs:**
 - `.ch8`
 - `.c8`
 - `.rom`
-- Any file (*.*)
+
+**NES ROMs:**
+- `.nes` (iNES format)
 
 ### Keyboard Controls
 
-The emulator currently maps some keyboard keys to CHIP-8's hexadecimal keypad:
+#### CHIP-8 Keyboard Mapping
+
+The emulator maps PC keyboard keys to CHIP-8's hexadecimal keypad:
+
+**Standard Mapping:**
+```
+PC Keyboard    CHIP-8 Key
+1 2 3 4    →   1 2 3 C
+Q W E R    →   4 5 6 D
+A S D F    →   7 8 9 E
+Z X C V    →   A 0 B F
+```
+
+**Arrow Keys (for convenience):**
 - **Up Arrow**: CHIP-8 key C
 - **Down Arrow**: CHIP-8 key D
+- **Left Arrow**: CHIP-8 key 1
+- **Right Arrow**: CHIP-8 key 4
 
-(Additional key mappings can be found in the source code)
+#### NES Controller Mapping
+
+The emulator maps PC keyboard keys to NES controller buttons:
+
+- **Z**: A button
+- **X**: B button
+- **Backspace**: Select
+- **Enter**: Start
+- **Arrow Keys**: D-pad (Up/Down/Left/Right)
 
 ## Technical Details
 
-### Emulator Specifications
+### CHIP-8 Specifications
 
 - **Display Resolution**: 64x32 pixels
 - **Display Scale**: 10x (640x320 window)
@@ -84,9 +132,21 @@ The emulator currently maps some keyboard keys to CHIP-8's hexadecimal keypad:
 - **Stack**: 16 levels
 - **Timers**: Delay timer and sound timer (both decrement at 60 Hz)
 
+### NES Specifications
+
+- **CPU**: 6502 processor running at ~1.79 MHz
+- **PPU**: Picture Processing Unit running at ~5.37 MHz
+- **Display Resolution**: 256x240 pixels
+- **Frame Rate**: ~60 Hz
+- **Memory**: 2KB internal RAM
+- **ROM Format**: iNES format (.nes files)
+- **Mapper Support**: Basic mapper support (currently Mapper 0)
+
 ### Architecture
 
-The emulator consists of two main components:
+The emulator consists of multiple components:
+
+#### CHIP-8 Components
 
 1. **Chip8.vb** - Core CHIP-8 virtual machine implementation
    - Memory management
@@ -94,10 +154,19 @@ The emulator consists of two main components:
    - Display and input handling
    - Timer management
 
+#### NES Components
+
+1. **NES.vb** - Core NES emulation
+   - **CPU6502** - 6502 processor emulation
+   - **PPU** - Picture Processing Unit for graphics
+   - **Memory** - Memory management and cartridge loading
+   
+#### UI Components
+
 2. **Form1.vb** - Windows Forms GUI
-   - ROM file loading
-   - Display rendering with nearest-neighbor scaling
-   - Input handling and keyboard mapping
+   - ROM file loading with automatic system detection
+   - Display rendering for both CHIP-8 and NES
+   - Input handling and keyboard mapping for both systems
    - Emulation control (pause, reset)
 
 ## License
@@ -106,6 +175,13 @@ This project is licensed under the MIT License. See the [LICENSE.txt](LICENSE.tx
 
 ## Resources
 
+### CHIP-8 Resources
 - [CHIP-8 Wikipedia](https://en.wikipedia.org/wiki/CHIP-8)
 - [Cowgod's CHIP-8 Technical Reference](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM)
 - [CHIP-8 ROMs Archive](https://github.com/kripod/chip8-roms)
+
+### NES Resources
+- [NES Wikipedia](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System)
+- [NESDev Wiki](https://wiki.nesdev.com/)
+- [6502 CPU Reference](http://www.6502.org/)
+- [NES ROM Archive](https://github.com/topics/nes-roms)
