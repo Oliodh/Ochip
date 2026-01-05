@@ -308,12 +308,16 @@ Public NotInheritable Class NES
                     Dim tileIndex As Byte = ReadVRAM(CUShort(nametableAddr + nametableOffset))
                     
                     ' Get attribute byte for this tile (determines palette)
+                    ' Each attribute byte controls a 4x4 tile (32x32 pixel) region
+                    ' Split into four 2x2 tile quadrants, each using 2 bits for palette selection
                     Dim attrX As Integer = tileX \ 4
                     Dim attrY As Integer = tileY \ 4
                     Dim attrOffset As UShort = CUShort(&H3C0US + (attrY * 8) + attrX)
                     Dim attrByte As Byte = ReadVRAM(CUShort(nametableAddr + attrOffset))
                     
-                    ' Determine which 2 bits of the attribute byte to use
+                    ' Determine which 2 bits of the attribute byte to use based on tile position
+                    ' Quadrant layout: top-left (bits 0-1), top-right (bits 2-3), 
+                    '                  bottom-left (bits 4-5), bottom-right (bits 6-7)
                     Dim shift As Integer = ((tileX And 2) + ((tileY And 2) * 2))
                     Dim paletteNum As Byte = CByte((attrByte >> shift) And &H3)
                     
@@ -427,6 +431,8 @@ Public NotInheritable Class NES
                 Case &H4US ' OAMDATA
                     ' OAM data write (sprites) - not implemented
                 Case &H5US ' PPUSCROLL
+                    ' Note: Simplified implementation - scroll values not stored
+                    ' Full implementation would store X/Y scroll and use for rendering
                     _addressLatch = Not _addressLatch
                 Case &H6US ' PPUADDR
                     If Not _addressLatch Then
