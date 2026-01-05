@@ -79,6 +79,25 @@ Public Class Form1
         Return False
     End Function
 
+    Private Shared Function IsNesRom(filePath As String) As Boolean
+        ' Check if the file is a NES ROM by looking for the iNES header
+        ' NES ROMs start with "NES" followed by 0x1A (EOF character)
+        Try
+            If Not File.Exists(filePath) Then Return False
+            
+            Dim header(3) As Byte
+            Using fs As New FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read)
+                If fs.Length < 4 Then Return False
+                fs.Read(header, 0, 4)
+            End Using
+            
+            ' Check for iNES header: "NES" + 0x1A
+            Return header(0) = &H4E AndAlso header(1) = &H45 AndAlso header(2) = &H53 AndAlso header(3) = &H1A
+        Catch
+            Return False
+        End Try
+    End Function
+
     Private Sub SetChip8KeyState(keyCode As Keys, isDown As Boolean)
         Dim chip8Key As Integer
         If TryMapToChip8Key(keyCode, chip8Key) Then
@@ -120,13 +139,26 @@ Public Class Form1
 
     Private Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
         Using ofd As New OpenFileDialog()
-            ofd.Title = "Open CHIP-8 ROM"
-            ofd.Filter = "CHIP-8 ROMs|*.ch8;*.c8;*.rom;*.*"
+            ofd.Title = "Open ROM"
+            ofd.Filter = "All ROMs|*.ch8;*.c8;*.rom;*.nes|CHIP-8 ROMs|*.ch8;*.c8;*.rom|NES ROMs|*.nes|All Files|*.*"
             ofd.InitialDirectory = If(String.IsNullOrWhiteSpace(_lastRomPath), Application.StartupPath, Path.GetDirectoryName(_lastRomPath))
 
             If ofd.ShowDialog(Me) <> DialogResult.OK Then Return
 
             _lastRomPath = ofd.FileName
+            
+            ' Check if this is a NES ROM
+            If IsNesRom(_lastRomPath) Then
+                MessageBox.Show(Me, "NES ROM detected!" & Environment.NewLine & Environment.NewLine & 
+                               "This is a Nintendo Entertainment System ROM file. " &
+                               "NES emulation is not yet supported in this application." & Environment.NewLine & Environment.NewLine &
+                               "This application currently only supports CHIP-8 ROMs (.ch8, .c8, .rom).",
+                               "NES ROM Not Supported",
+                               MessageBoxButtons.OK,
+                               MessageBoxIcon.Information)
+                Return
+            End If
+            
             _romLoaded = True
             LoadAndStartRom(_lastRomPath)
         End Using
