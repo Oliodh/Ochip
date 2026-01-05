@@ -171,7 +171,7 @@ Public NotInheritable Class Chip8
                 V(x) = CByte(_rng.Next(0, 256) And nn)
 
             Case &HD000US ' DXYN: DRW Vx, Vy, nibble
-                ' Starting coordinates are wrapped to ensure they're within display bounds
+                ' Wrap starting coordinates to valid display range (0 to width-1, 0 to height-1)
                 Dim px As Integer = V(x) Mod DisplayWidth
                 Dim py As Integer = V(y) Mod DisplayHeight
 
@@ -183,8 +183,9 @@ Public NotInheritable Class Chip8
                             Dim dx As Integer = px + col
                             Dim dy As Integer = py + row
                             
-                            ' Clip sprites at screen boundaries (classic CHIP-8 behavior)
-                            ' Since px/py are always >= 0 (due to Mod above), we only need to check upper bounds
+                            ' Clip sprite pixels at screen boundaries (classic CHIP-8 behavior)
+                            ' Pixels outside the display are not drawn (no wrapping)
+                            ' px and py are non-negative (wrapped above), so we only check upper bounds
                             If dx < DisplayWidth AndAlso dy < DisplayHeight Then
                                 Dim idx As Integer = dy * DisplayWidth + dx
 
