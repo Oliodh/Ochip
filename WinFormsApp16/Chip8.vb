@@ -179,12 +179,16 @@ Public NotInheritable Class Chip8
                     Dim sprite As Byte = Memory(I + CUShort(row))
                     For col As Integer = 0 To 7
                         If (sprite And (CByte(&H80 >> col))) <> 0 Then
-                            Dim dx As Integer = (px + col) Mod DisplayWidth
-                            Dim dy As Integer = (py + row) Mod DisplayHeight
-                            Dim idx As Integer = dy * DisplayWidth + dx
+                            Dim dx As Integer = px + col
+                            Dim dy As Integer = py + row
+                            
+                            ' Clip sprites at screen boundaries instead of wrapping
+                            If dx >= 0 AndAlso dx < DisplayWidth AndAlso dy >= 0 AndAlso dy < DisplayHeight Then
+                                Dim idx As Integer = dy * DisplayWidth + dx
 
-                            If Display(idx) Then V(15) = 1
-                            Display(idx) = Not Display(idx)
+                                If Display(idx) Then V(15) = 1
+                                Display(idx) = Not Display(idx)
+                            End If
                         End If
                     Next
                 Next
