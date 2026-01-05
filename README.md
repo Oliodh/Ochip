@@ -14,8 +14,10 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 
 ### NES (Nintendo Entertainment System)
 The NES is an 8-bit home video game console released by Nintendo in 1983. The emulator supports:
-- 6502 CPU emulation
+- Full 6502 CPU emulation with complete instruction set
 - PPU (Picture Processing Unit) for graphics rendering
+- VBlank and NMI interrupt support
+- Controller input handling
 - 256x240 display resolution
 - Controller input (8 buttons)
 - iNES ROM format (.nes files)
@@ -31,11 +33,13 @@ The NES is an 8-bit home video game console released by Nintendo in 1983. The em
   - Accurate 60 Hz timing
   - Full keyboard input support
 - **NES Features**:
-  - 6502 CPU emulation
+  - Full 6502 CPU emulation with complete instruction set
   - PPU (Picture Processing Unit) for graphics
+  - VBlank and NMI interrupt handling
   - 256x240 display resolution
   - iNES ROM format support (.nes files)
   - Controller input mapping
+  - Background rendering with pattern tables and nametables
 - **Emulation controls**:
   - Load ROM file via file picker
   - Reset emulation
@@ -135,7 +139,12 @@ The emulator maps PC keyboard keys to NES controller buttons:
 ### NES Specifications
 
 - **CPU**: 6502 processor running at ~1.79 MHz
+  - Complete instruction set implementation
+  - All addressing modes supported
+  - NMI interrupt support
 - **PPU**: Picture Processing Unit running at ~5.37 MHz
+  - Background rendering
+  - VBlank flag and interrupt
 - **Display Resolution**: 256x240 pixels
 - **Frame Rate**: ~60 Hz
 - **Memory**: 2KB internal RAM
@@ -157,9 +166,9 @@ The emulator consists of multiple components:
 #### NES Components
 
 1. **NES.vb** - Core NES emulation
-   - **CPU6502** - 6502 processor emulation
-   - **PPU** - Picture Processing Unit for graphics
-   - **Memory** - Memory management and cartridge loading
+   - **CPU6502** - Complete 6502 processor emulation with all instructions
+   - **PPU** - Picture Processing Unit for graphics with VBlank/NMI support
+   - **Memory** - Memory management, cartridge loading, and controller I/O
    
 #### UI Components
 
