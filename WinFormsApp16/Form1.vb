@@ -200,7 +200,7 @@ Public Class Form1
             If ofd.ShowDialog(Me) <> DialogResult.OK Then Return
 
             _lastRomPath = ofd.FileName
-            _romLoaded = True
+            _romLoaded = False
 
             ' Detect emulator type by file extension
             Dim ext As String = Path.GetExtension(_lastRomPath).ToLowerInvariant()
@@ -250,35 +250,41 @@ Public Class Form1
     End Sub
 
     Private Sub LoadAndStartRom(inPath As String)
-        If _currentEmulator = EmulatorType.Chip8 Then
-            _chip8.Reset()
-            _chip8.LoadRom(inPath)
-            _chip8.DrawFlag = True
-            Text = $"CHIP-8 Emulator - {Path.GetFileName(inPath)}"
-            ' Resize window for CHIP-8 (start with low-res, will adjust dynamically)
-            ClientSize = New Size(Chip8.DisplayWidthLowRes * Chip8ScaleLowRes, Chip8.DisplayHeightLowRes * Chip8ScaleLowRes)
-            _lastChip8HighResMode = False
-            ' Create persistent bitmap and pixel buffer for CHIP-8 rendering
-            EnsureChip8BitmapSize(Chip8.DisplayWidthLowRes, Chip8.DisplayHeightLowRes)
-            ' Dispose NES bitmap if switching from NES
-            _nesBitmap?.Dispose()
-        Else
-            _nes.Reset()
-            _nes.LoadRom(inPath)
-            _nes.DrawFlag = True
-            Text = $"NES Emulator - {Path.GetFileName(inPath)}"
-            ' Resize window for NES
-            ClientSize = New Size(NES.DisplayWidth, NES.DisplayHeight)
-            ' Create persistent bitmap for NES rendering
-            _nesBitmap?.Dispose()
-            _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
-            ' Dispose CHIP-8 bitmap if switching from CHIP-8
-            _chip8Bitmap?.Dispose()
-        End If
+        Try
+            If _currentEmulator = EmulatorType.Chip8 Then
+                _chip8.Reset()
+                _chip8.LoadRom(inPath)
+                _chip8.DrawFlag = True
+                Text = $"CHIP-8 Emulator - {Path.GetFileName(inPath)}"
+                ' Resize window for CHIP-8 (start with low-res, will adjust dynamically)
+                ClientSize = New Size(Chip8.DisplayWidthLowRes * Chip8ScaleLowRes, Chip8.DisplayHeightLowRes * Chip8ScaleLowRes)
+                _lastChip8HighResMode = False
+                ' Create persistent bitmap and pixel buffer for CHIP-8 rendering
+                EnsureChip8BitmapSize(Chip8.DisplayWidthLowRes, Chip8.DisplayHeightLowRes)
+                ' Dispose NES bitmap if switching from NES
+                _nesBitmap?.Dispose()
+            Else
+                _nes.Reset()
+                _nes.LoadRom(inPath)
+                _nes.DrawFlag = True
+                Text = $"NES Emulator - {Path.GetFileName(inPath)}"
+                ' Resize window for NES
+                ClientSize = New Size(NES.DisplayWidth, NES.DisplayHeight)
+                ' Create persistent bitmap for NES rendering
+                _nesBitmap?.Dispose()
+                _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+                ' Dispose CHIP-8 bitmap if switching from CHIP-8
+                _chip8Bitmap?.Dispose()
+            End If
 
-        _isPaused = False
-        ButtonPause.Text = "Pause"
-        Invalidate()
+            _romLoaded = True
+            _isPaused = False
+            ButtonPause.Text = "Pause"
+            Invalidate()
+        Catch ex As Exception
+            _romLoaded = False
+            MessageBox.Show(Me, $"Failed to load ROM: {ex.Message}", "ROM Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
     End Sub
 
     Private Sub OnFrameTick(sender As Object, e As EventArgs)
