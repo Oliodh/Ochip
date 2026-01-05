@@ -11,8 +11,11 @@ Public Class Form1
     Private ReadOnly _frameTimer As New Timer()
     Private _nesBitmap As Bitmap
 
-    Private Const Chip8Scale As Integer = 10
+    Private Const Chip8ScaleLowRes As Integer = 10
+    Private Const Chip8ScaleHighRes As Integer = 5
     Private Const CyclesPerFrame As Integer = 12
+    
+    Private _lastChip8HighResMode As Boolean = False
 
     Private _isPaused As Boolean
     Private _lastRomPath As String
@@ -233,8 +236,9 @@ Public Class Form1
             _chip8.LoadRom(inPath)
             _chip8.DrawFlag = True
             Text = $"CHIP-8 Emulator - {Path.GetFileName(inPath)}"
-            ' Resize window for CHIP-8
-            ClientSize = New Size(Chip8.DisplayWidth * Chip8Scale, Chip8.DisplayHeight * Chip8Scale)
+            ' Resize window for CHIP-8 (start with low-res, will adjust dynamically)
+            ClientSize = New Size(Chip8.DisplayWidthLowRes * Chip8ScaleLowRes, Chip8.DisplayHeightLowRes * Chip8ScaleLowRes)
+            _lastChip8HighResMode = False
             ' Dispose NES bitmap if switching from NES
             If _nesBitmap IsNot Nothing Then
                 _nesBitmap.Dispose()
@@ -268,6 +272,13 @@ Public Class Form1
             Next
 
             _chip8.TickTimers()
+            
+            ' Check if display mode changed (SCHIP mode switching)
+            If _chip8.IsHighResMode <> _lastChip8HighResMode Then
+                _lastChip8HighResMode = _chip8.IsHighResMode
+                Dim scale As Integer = If(_chip8.IsHighResMode, Chip8ScaleHighRes, Chip8ScaleLowRes)
+                ClientSize = New Size(_chip8.DisplayWidth * scale, _chip8.DisplayHeight * scale)
+            End If
 
             If _chip8.DrawFlag Then
                 _chip8.DrawFlag = False
@@ -291,12 +302,16 @@ Public Class Form1
         If _currentEmulator = EmulatorType.Chip8 Then
             e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
             e.Graphics.PixelOffsetMode = PixelOffsetMode.Half
+            
+            Dim scale As Integer = If(_chip8.IsHighResMode, Chip8ScaleHighRes, Chip8ScaleLowRes)
+            Dim width As Integer = _chip8.DisplayWidth
+            Dim height As Integer = _chip8.DisplayHeight
 
-            For y As Integer = 0 To Chip8.DisplayHeight - 1
-                For x As Integer = 0 To Chip8.DisplayWidth - 1
-                    Dim idx As Integer = (y * Chip8.DisplayWidth) + x
+            For y As Integer = 0 To height - 1
+                For x As Integer = 0 To width - 1
+                    Dim idx As Integer = (y * width) + x
                     If _chip8.Display(idx) Then
-                        e.Graphics.FillRectangle(Brushes.White, x * Chip8Scale, y * Chip8Scale, Chip8Scale, Chip8Scale)
+                        e.Graphics.FillRectangle(Brushes.White, x * scale, y * scale, scale, scale)
                     End If
                 Next
             Next

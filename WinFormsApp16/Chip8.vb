@@ -4,8 +4,10 @@ Option Explicit On
 Imports System.IO
 
 Public NotInheritable Class Chip8
-    Public Const DisplayWidth As Integer = 64
-    Public Const DisplayHeight As Integer = 32
+    Public Const DisplayWidthLowRes As Integer = 64
+    Public Const DisplayHeightLowRes As Integer = 32
+    Public Const DisplayWidthHighRes As Integer = 128
+    Public Const DisplayHeightHighRes As Integer = 64
     Public Const ProgramStart As UShort = &H200US
 
     Private ReadOnly _rng As New Random()
@@ -21,9 +23,24 @@ Public NotInheritable Class Chip8
     Public SoundTimer As Byte
 
     Public ReadOnly Keys(15) As Boolean
-    Public ReadOnly Display(DisplayWidth * DisplayHeight - 1) As Boolean
+    Public ReadOnly Display(DisplayWidthHighRes * DisplayHeightHighRes - 1) As Boolean
+    Public ReadOnly RplFlags(15) As Byte
 
     Public DrawFlag As Boolean
+    Public IsHighResMode As Boolean
+    
+    ' Properties for dynamic display size
+    Public ReadOnly Property DisplayWidth As Integer
+        Get
+            Return If(IsHighResMode, DisplayWidthHighRes, DisplayWidthLowRes)
+        End Get
+    End Property
+    
+    Public ReadOnly Property DisplayHeight As Integer
+        Get
+            Return If(IsHighResMode, DisplayHeightHighRes, DisplayHeightLowRes)
+        End Get
+    End Property
 
     Public Sub Reset()
         Array.Clear(Memory, 0, Memory.Length)
@@ -31,6 +48,7 @@ Public NotInheritable Class Chip8
         Array.Clear(Stack, 0, Stack.Length)
         Array.Clear(Keys, 0, Keys.Length)
         Array.Clear(Display, 0, Display.Length)
+        Array.Clear(RplFlags, 0, RplFlags.Length)
 
         I = 0US
         Pc = ProgramStart
@@ -38,8 +56,10 @@ Public NotInheritable Class Chip8
         DelayTimer = 0
         SoundTimer = 0
         DrawFlag = True
+        IsHighResMode = False
 
         LoadFontSet()
+        LoadExtendedFontSet()
     End Sub
 
     Public Sub LoadRom(path As String)
@@ -89,8 +109,34 @@ Public NotInheritable Class Chip8
                         If Sp = 0 Then Throw New InvalidOperationException("Stack underflow.")
                         Sp = CByte(Sp - 1)
                         Pc = Stack(Sp)
+                    
+                    Case &HFDUS ' 00FD: Exit (SCHIP)
+                        ' Exit interpreter - stop execution
+                        Pc = &HFFFEUS
+                        
+                    Case &HFEUS ' 00FE: Disable extended screen mode (SCHIP)
+                        IsHighResMode = False
+                        DrawFlag = True
+                        
+                    Case &HFFUS ' 00FF: Enable extended screen mode (SCHIP)
+                        IsHighResMode = True
+                        DrawFlag = True
+                        
+                    Case &HFBUS ' 00FB: Scroll right 4 pixels (SCHIP)
+                        ScrollRight()
+                        DrawFlag = True
+                        
+                    Case &HFCUS ' 00FC: Scroll left 4 pixels (SCHIP)
+                        ScrollLeft()
+                        DrawFlag = True
 
                     Case Else
+                        ' Check for 00CN: Scroll down N pixels (SCHIP)
+                        If (opcode And &HFF0US) = &HC0US Then
+                            Dim scrollN As Integer = CInt(opcode And &HFUS)
+                            ScrollDown(scrollN)
+                            DrawFlag = True
+                        End If
                         ' 0NNN ignored (RCA 1802 call), not used by most ROMs
                 End Select
 
@@ -176,25 +222,59 @@ Public NotInheritable Class Chip8
                 Dim py As Integer = V(y) Mod DisplayHeight
 
                 V(15) = 0
-                For row As Integer = 0 To n - 1
-                    Dim sprite As Byte = Memory(I + CUShort(row))
-                    For col As Integer = 0 To 7
-                        If (sprite And (CByte(&H80 >> col))) <> 0 Then
-                            Dim dx As Integer = px + col
-                            Dim dy As Integer = py + row
-                            
-                            ' Clip sprite pixels at screen boundaries (classic CHIP-8 behavior)
-                            ' Pixels outside the display are not drawn (no wrapping)
-                            ' px and py are non-negative (wrapped above), so we only check upper bounds
-                            If dx < DisplayWidth AndAlso dy < DisplayHeight Then
-                                Dim idx As Integer = dy * DisplayWidth + dx
-
-                                If Display(idx) Then V(15) = 1
-                                Display(idx) = Not Display(idx)
+                
+                ' SCHIP: If n=0 and high-res mode, draw 16x16 sprite
+                If n = 0 AndAlso IsHighResMode Then
+                    ' Draw 16x16 sprite (SCHIP extended sprite)
+                    For row As Integer = 0 To 15
+                        Dim spriteByte1 As Byte = Memory(I + CUShort(row * 2))
+                        Dim spriteByte2 As Byte = Memory(I + CUShort(row * 2 + 1))
+                        
+                        For col As Integer = 0 To 15
+                            Dim bit As Boolean
+                            If col < 8 Then
+                                bit = (spriteByte1 And (CByte(&H80 >> col))) <> 0
+                            Else
+                                bit = (spriteByte2 And (CByte(&H80 >> (col - 8)))) <> 0
                             End If
-                        End If
+                            
+                            If bit Then
+                                Dim dx As Integer = px + col
+                                Dim dy As Integer = py + row
+                                
+                                ' Clip sprite pixels at screen boundaries
+                                If dx < DisplayWidth AndAlso dy < DisplayHeight Then
+                                    Dim idx As Integer = dy * DisplayWidth + dx
+                                    
+                                    If Display(idx) Then V(15) = 1
+                                    Display(idx) = Not Display(idx)
+                                End If
+                            End If
+                        Next
                     Next
-                Next
+                Else
+                    ' Standard 8xN sprite drawing
+                    Dim spriteHeight As Integer = If(n = 0, 16, n)
+                    For row As Integer = 0 To spriteHeight - 1
+                        Dim sprite As Byte = Memory(I + CUShort(row))
+                        For col As Integer = 0 To 7
+                            If (sprite And (CByte(&H80 >> col))) <> 0 Then
+                                Dim dx As Integer = px + col
+                                Dim dy As Integer = py + row
+                                
+                                ' Clip sprite pixels at screen boundaries (classic CHIP-8 behavior)
+                                ' Pixels outside the display are not drawn (no wrapping)
+                                ' px and py are non-negative (wrapped above), so we only check upper bounds
+                                If dx < DisplayWidth AndAlso dy < DisplayHeight Then
+                                    Dim idx As Integer = dy * DisplayWidth + dx
+
+                                    If Display(idx) Then V(15) = 1
+                                    Display(idx) = Not Display(idx)
+                                End If
+                            End If
+                        Next
+                    Next
+                End If
 
                 DrawFlag = True
 
@@ -238,6 +318,9 @@ Public NotInheritable Class Chip8
 
                     Case &H29US ' FX29: LD F, Vx (font char)
                         I = CUShort((V(x) And &HF) * 5)
+                        
+                    Case &H30US ' FX30: LD HF, Vx (SCHIP extended font)
+                        I = CUShort(&H50 + (V(x) And &HF) * 10)
 
                     Case &H33US ' FX33: BCD
                         Dim value As Integer = V(x)
@@ -253,6 +336,16 @@ Public NotInheritable Class Chip8
                     Case &H65US ' FX65: LD V0..Vx, [I]
                         For j As Integer = 0 To x
                             V(j) = Memory(I + CUShort(j))
+                        Next
+                        
+                    Case &H75US ' FX75: Store V0..Vx in RPL user flags (SCHIP)
+                        For j As Integer = 0 To Math.Min(x, 15)
+                            RplFlags(j) = V(j)
+                        Next
+                        
+                    Case &H85US ' FX85: Read V0..Vx from RPL user flags (SCHIP)
+                        For j As Integer = 0 To Math.Min(x, 15)
+                            V(j) = RplFlags(j)
                         Next
                 End Select
         End Select
@@ -280,5 +373,88 @@ Public NotInheritable Class Chip8
         }
 
         Buffer.BlockCopy(font, 0, Memory, 0, font.Length)
+    End Sub
+    
+    Private Sub LoadExtendedFontSet()
+        ' SCHIP extended font sprites (0-F), 10 bytes each, stored at 0x050.
+        ' These are 8x10 pixel fonts for high-resolution mode
+        Dim extendedFont As Byte() = {
+            &HFF, &HFF, &HC3, &HC3, &HC3, &HC3, &HC3, &HC3, &HFF, &HFF, ' 0
+            &H18, &H78, &H78, &H18, &H18, &H18, &H18, &H18, &HFF, &HFF, ' 1
+            &HFF, &HFF, &H3, &H3, &HFF, &HFF, &HC0, &HC0, &HFF, &HFF,   ' 2
+            &HFF, &HFF, &H3, &H3, &HFF, &HFF, &H3, &H3, &HFF, &HFF,     ' 3
+            &HC3, &HC3, &HC3, &HC3, &HFF, &HFF, &H3, &H3, &H3, &H3,     ' 4
+            &HFF, &HFF, &HC0, &HC0, &HFF, &HFF, &H3, &H3, &HFF, &HFF,   ' 5
+            &HFF, &HFF, &HC0, &HC0, &HFF, &HFF, &HC3, &HC3, &HFF, &HFF, ' 6
+            &HFF, &HFF, &H3, &H3, &H6, &HC, &H18, &H18, &H18, &H18,     ' 7
+            &HFF, &HFF, &HC3, &HC3, &HFF, &HFF, &HC3, &HC3, &HFF, &HFF, ' 8
+            &HFF, &HFF, &HC3, &HC3, &HFF, &HFF, &H3, &H3, &HFF, &HFF,   ' 9
+            &H7E, &HFF, &HC3, &HC3, &HC3, &HFF, &HFF, &HC3, &HC3, &HC3, ' A
+            &HFC, &HFC, &HC3, &HC3, &HFC, &HFC, &HC3, &HC3, &HFC, &HFC, ' B
+            &H3F, &HFF, &HC0, &HC0, &HC0, &HC0, &HC0, &HC0, &HFF, &H3F, ' C
+            &HFC, &HFC, &HC3, &HC3, &HC3, &HC3, &HC3, &HC3, &HFC, &HFC, ' D
+            &HFF, &HFF, &HC0, &HC0, &HFF, &HFF, &HC0, &HC0, &HFF, &HFF, ' E
+            &HFF, &HFF, &HC0, &HC0, &HFF, &HFF, &HC0, &HC0, &HC0, &HC0  ' F
+        }
+
+        Buffer.BlockCopy(extendedFont, 0, Memory, &H50, extendedFont.Length)
+    End Sub
+    
+    Private Sub ScrollDown(n As Integer)
+        ' Scroll display down by n pixels (SCHIP)
+        Dim width As Integer = DisplayWidth
+        Dim height As Integer = DisplayHeight
+        
+        ' Move pixels down from bottom to top
+        For y As Integer = height - 1 To n Step -1
+            For x As Integer = 0 To width - 1
+                Dim srcIdx As Integer = (y - n) * width + x
+                Dim dstIdx As Integer = y * width + x
+                Display(dstIdx) = Display(srcIdx)
+            Next
+        Next
+        
+        ' Clear top n rows
+        For y As Integer = 0 To n - 1
+            For x As Integer = 0 To width - 1
+                Display(y * width + x) = False
+            Next
+        Next
+    End Sub
+    
+    Private Sub ScrollLeft()
+        ' Scroll display left by 4 pixels (SCHIP)
+        Dim width As Integer = DisplayWidth
+        Dim height As Integer = DisplayHeight
+        
+        For y As Integer = 0 To height - 1
+            For x As Integer = 0 To width - 5
+                Dim srcIdx As Integer = y * width + x + 4
+                Dim dstIdx As Integer = y * width + x
+                Display(dstIdx) = Display(srcIdx)
+            Next
+            ' Clear right 4 columns
+            For x As Integer = width - 4 To width - 1
+                Display(y * width + x) = False
+            Next
+        Next
+    End Sub
+    
+    Private Sub ScrollRight()
+        ' Scroll display right by 4 pixels (SCHIP)
+        Dim width As Integer = DisplayWidth
+        Dim height As Integer = DisplayHeight
+        
+        For y As Integer = 0 To height - 1
+            For x As Integer = width - 1 To 4 Step -1
+                Dim srcIdx As Integer = y * width + x - 4
+                Dim dstIdx As Integer = y * width + x
+                Display(dstIdx) = Display(srcIdx)
+            Next
+            ' Clear left 4 columns
+            For x As Integer = 0 To 3
+                Display(y * width + x) = False
+            Next
+        Next
     End Sub
 End Class
