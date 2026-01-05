@@ -26,6 +26,7 @@ Public NotInheritable Class NES
         _memory = New Memory()
         _cpu = New CPU6502(_memory)
         _ppu = New PPU(_memory, DisplayBuffer)
+        _memory.SetPPU(_ppu)
         Reset()
     End Sub
 
@@ -218,6 +219,37 @@ Public NotInheritable Class NES
 
         Public FrameComplete As Boolean
 
+        ' PPU registers
+        Private _ppuCtrl As Byte        ' $2000 PPUCTRL
+        Private _ppuMask As Byte        ' $2001 PPUMASK
+        Private _ppuStatus As Byte      ' $2002 PPUSTATUS
+        Private _oamAddr As Byte        ' $2003 OAMADDR
+        Private _ppuScroll As Byte      ' $2005 PPUSCROLL
+        Private _ppuAddr As UShort      ' $2006 PPUADDR
+        Private _ppuData As Byte        ' $2007 PPUDATA
+        
+        ' PPU internal state
+        Private _addressLatch As Boolean
+        Private _dataBuffer As Byte
+        
+        ' VRAM - 2KB for nametables (mirrored)
+        Private ReadOnly _vram(2047) As Byte
+        
+        ' Palette RAM - 32 bytes
+        Private ReadOnly _paletteRam(31) As Byte
+        
+        ' NES color palette (64 colors)
+        Private Shared ReadOnly NesPalette As Integer() = {
+            &HFF666666, &HFF002A88, &HFF1412A7, &HFF3B00A4, &HFF5C007E, &HFF6E0040, &HFF6C0600, &HFF561D00,
+            &HFF333500, &HFF0B4800, &HFF005200, &HFF004F08, &HFF00404D, &HFF000000, &HFF000000, &HFF000000,
+            &HFFADADAD, &HFF155FD9, &HFF4240FF, &HFF7527FE, &HFFA01ACC, &HFFB71E7B, &HFFB53120, &HFF994E00,
+            &HFF6B6D00, &HFF388700, &HFF0C9300, &HFF008F32, &HFF007C8D, &HFF000000, &HFF000000, &HFF000000,
+            &HFFFFFFE3, &HFF609DFF, &HFF9C84FF, &HFFC970FF, &HFFF364FF, &HFFFE6ECC, &HFFFE8170, &HFFEA9E22,
+            &HFFBCBE00, &HFF88D800, &HFF5CE430, &HFF45E082, &HFF48CDDE, &HFF4F4F4F, &HFF000000, &HFF000000,
+            &HFFFFFFFF, &HFFC0DFFF, &HFFD3D2FF, &HFFE8C8FF, &HFFFBC2FF, &HFFFEC4EA, &HFFFECCC5, &HFFF7D8A5,
+            &HFFE4E594, &HFFCFEF96, &HFFBDF4AB, &HFFB3F3CC, &HFFB5EBF2, &HFFB8B8B8, &HFF000000, &HFF000000
+        }
+
         Public Sub New(memory As Memory, displayBuffer As Integer())
             _memory = memory
             _displayBuffer = displayBuffer
@@ -228,6 +260,17 @@ Public NotInheritable Class NES
             _cycle = 0
             _scanline = 0
             FrameComplete = False
+            _ppuCtrl = 0
+            _ppuMask = 0
+            _ppuStatus = &HA0  ' Bits 7 and 5 set (VBlank and sprite overflow flags cleared, unused bit set)
+            _oamAddr = 0
+            _ppuScroll = 0
+            _ppuAddr = 0
+            _ppuData = 0
+            _addressLatch = False
+            _dataBuffer = 0
+            Array.Clear(_vram, 0, _vram.Length)
+            Array.Clear(_paletteRam, 0, _paletteRam.Length)
             Array.Clear(_displayBuffer, 0, _displayBuffer.Length)
         End Sub
 
@@ -248,11 +291,163 @@ Public NotInheritable Class NES
         End Sub
 
         Private Sub RenderFrame()
-            ' Simplified rendering - just clear to a default color for now
-            ' Full NES PPU would read from pattern tables, nametables, etc.
-            For i As Integer = 0 To _displayBuffer.Length - 1
-                _displayBuffer(i) = &HFF000000 ' Black (ARGB format)
+            ' Render the background using pattern tables and nametables
+            ' This is a simplified implementation that renders one background layer
+            
+            ' Get base nametable address from PPUCTRL
+            Dim nametableAddr As UShort = CUShort(&H2000US + ((_ppuCtrl And &H3) * &H400US))
+            
+            ' Get pattern table address for background (bit 4 of PPUCTRL)
+            Dim patternTableAddr As UShort = If((_ppuCtrl And &H10) <> 0, &H1000US, &H0US)
+            
+            ' Render all 30 rows of 32 tiles each
+            For tileY As Integer = 0 To 29
+                For tileX As Integer = 0 To 31
+                    ' Get tile index from nametable
+                    Dim nametableOffset As UShort = CUShort(tileY * 32 + tileX)
+                    Dim tileIndex As Byte = ReadVRAM(CUShort(nametableAddr + nametableOffset))
+                    
+                    ' Get attribute byte for this tile (determines palette)
+                    ' Each attribute byte controls a 4x4 tile (32x32 pixel) region
+                    ' Split into four 2x2 tile quadrants, each using 2 bits for palette selection
+                    Dim attrX As Integer = tileX \ 4
+                    Dim attrY As Integer = tileY \ 4
+                    Dim attrOffset As UShort = CUShort(&H3C0US + (attrY * 8) + attrX)
+                    Dim attrByte As Byte = ReadVRAM(CUShort(nametableAddr + attrOffset))
+                    
+                    ' Determine which 2 bits of the attribute byte to use based on tile position
+                    ' Quadrant layout: top-left (bits 0-1), top-right (bits 2-3), 
+                    '                  bottom-left (bits 4-5), bottom-right (bits 6-7)
+                    Dim shift As Integer = ((tileX And 2) + ((tileY And 2) * 2))
+                    Dim paletteNum As Byte = CByte((attrByte >> shift) And &H3)
+                    
+                    ' Read pattern data for this tile (8x8 pixels)
+                    Dim tileAddr As UShort = CUShort(patternTableAddr + (tileIndex * 16US))
+                    
+                    For pixelY As Integer = 0 To 7
+                        Dim planeLow As Byte = _memory.ReadCHR(CUShort(tileAddr + CUShort(pixelY)))
+                        Dim planeHigh As Byte = _memory.ReadCHR(CUShort(tileAddr + CUShort(pixelY) + 8US))
+                        
+                        For pixelX As Integer = 0 To 7
+                            ' Combine the two bit planes to get color index
+                            Dim bit As Integer = 7 - pixelX
+                            Dim colorLow As Byte = CByte((planeLow >> bit) And 1)
+                            Dim colorHigh As Byte = CByte((planeHigh >> bit) And 1)
+                            Dim colorIndex As Byte = CByte((colorHigh << 1) Or colorLow)
+                            
+                            ' Get color from palette
+                            ' Color index 0 always uses the universal background color (palette address 0)
+                            Dim paletteAddr As Integer = If(colorIndex = 0, 0, (paletteNum * 4) + colorIndex)
+                            Dim paletteValue As Byte = _paletteRam(paletteAddr)
+                            Dim color As Integer = NesPalette(paletteValue And &H3F)
+                            
+                            ' Draw pixel to display buffer
+                            Dim screenX As Integer = (tileX * 8) + pixelX
+                            Dim screenY As Integer = (tileY * 8) + pixelY
+                            If screenX < DisplayWidth AndAlso screenY < DisplayHeight Then
+                                Dim bufferIndex As Integer = (screenY * DisplayWidth) + screenX
+                                _displayBuffer(bufferIndex) = color
+                            End If
+                        Next
+                    Next
+                Next
             Next
+        End Sub
+        
+        Private Function ReadVRAM(address As UShort) As Byte
+            ' VRAM address space $0000-$3FFF
+            If address < &H2000US Then
+                ' Pattern tables (CHR-ROM) - handled by Memory
+                Return _memory.ReadCHR(address)
+            ElseIf address < &H3F00US Then
+                ' Nametables ($2000-$2FFF) - mirrored
+                Dim offset As Integer = (address - &H2000US) And &H7FF
+                Return _vram(offset)
+            ElseIf address < &H4000US Then
+                ' Palette RAM ($3F00-$3F1F) - mirrored
+                Dim offset As Integer = (address - &H3F00US) And &H1F
+                ' Mirror background color
+                If (offset And &H3) = 0 Then
+                    offset = 0
+                End If
+                Return _paletteRam(offset)
+            Else
+                Return 0
+            End If
+        End Function
+        
+        Public Sub WriteVRAM(address As UShort, value As Byte)
+            If address < &H2000US Then
+                ' Pattern tables (CHR-ROM) - read-only in most mappers
+                ' Some mappers allow CHR-RAM, but we'll skip that for now
+            ElseIf address < &H3F00US Then
+                ' Nametables ($2000-$2FFF) - mirrored
+                Dim offset As Integer = (address - &H2000US) And &H7FF
+                _vram(offset) = value
+            ElseIf address < &H4000US Then
+                ' Palette RAM ($3F00-$3F1F) - mirrored
+                Dim offset As Integer = (address - &H3F00US) And &H1F
+                ' Mirror background color
+                If (offset And &H3) = 0 Then
+                    offset = 0
+                End If
+                _paletteRam(offset) = value
+            End If
+        End Sub
+        
+        Public Function ReadRegister(address As UShort) As Byte
+            Select Case address And &H7US
+                Case &H2US ' PPUSTATUS
+                    Dim status As Byte = _ppuStatus
+                    _ppuStatus = CByte(_ppuStatus And (Not &H80)) ' Clear VBlank flag
+                    _addressLatch = False
+                    Return status
+                Case &H4US ' OAMDATA
+                    Return 0
+                Case &H7US ' PPUDATA
+                    Dim data As Byte = _dataBuffer
+                    _dataBuffer = ReadVRAM(_ppuAddr)
+                    ' Palette reads are immediate
+                    If _ppuAddr >= &H3F00US Then
+                        data = _dataBuffer
+                    End If
+                    ' Increment address
+                    Dim increment As UShort = If((_ppuCtrl And &H4) <> 0, 32US, 1US)
+                    _ppuAddr = CUShort(_ppuAddr + increment)
+                    Return data
+                Case Else
+                    Return 0
+            End Select
+        End Function
+        
+        Public Sub WriteRegister(address As UShort, value As Byte)
+            Select Case address And &H7US
+                Case &H0US ' PPUCTRL
+                    _ppuCtrl = value
+                Case &H1US ' PPUMASK
+                    _ppuMask = value
+                Case &H3US ' OAMADDR
+                    _oamAddr = value
+                Case &H4US ' OAMDATA
+                    ' OAM data write (sprites) - not implemented
+                Case &H5US ' PPUSCROLL
+                    ' Note: Simplified implementation - scroll values not stored
+                    ' Full implementation would store X/Y scroll and use for rendering
+                    _addressLatch = Not _addressLatch
+                Case &H6US ' PPUADDR
+                    If Not _addressLatch Then
+                        ' First write: high byte (clear low byte, set high byte)
+                        _ppuAddr = CUShort((CUShort(value) << 8) Or (_ppuAddr And &H00FFUS))
+                    Else
+                        ' Second write: low byte (clear high byte of previous high write, set low byte)
+                        _ppuAddr = CUShort((_ppuAddr And &HFF00US) Or value)
+                    End If
+                    _addressLatch = Not _addressLatch
+                Case &H7US ' PPUDATA
+                    WriteVRAM(_ppuAddr, value)
+                    Dim increment As UShort = If((_ppuCtrl And &H4) <> 0, 32US, 1US)
+                    _ppuAddr = CUShort(_ppuAddr + increment)
+            End Select
         End Sub
     End Class
 
@@ -261,10 +456,15 @@ Public NotInheritable Class NES
         Private _prgRom As Byte()                     ' PRG-ROM from cartridge
         Private _chrRom As Byte()                     ' CHR-ROM from cartridge
         Private _mapper As Integer                    ' Mapper number
+        Private _ppu As PPU                           ' Reference to PPU for register access
 
         Public Sub New()
             _prgRom = Array.Empty(Of Byte)()
             _chrRom = Array.Empty(Of Byte)()
+        End Sub
+        
+        Public Sub SetPPU(ppu As PPU)
+            _ppu = ppu
         End Sub
 
         Public Sub LoadCartridge(romData As Byte())
@@ -313,7 +513,10 @@ Public NotInheritable Class NES
                 ' Internal RAM (mirrored every 2KB)
                 Return _ram(address And &H7FFUS)
             ElseIf address < &H4000US Then
-                ' PPU registers (not fully implemented)
+                ' PPU registers ($2000-$3FFF, mirrored every 8 bytes)
+                If _ppu IsNot Nothing Then
+                    Return _ppu.ReadRegister(address)
+                End If
                 Return 0
             ElseIf address < &H4020US Then
                 ' APU and I/O registers
@@ -335,13 +538,24 @@ Public NotInheritable Class NES
                 Return 0
             End If
         End Function
+        
+        Public Function ReadCHR(address As UShort) As Byte
+            ' Read from CHR-ROM (pattern tables)
+            If _chrRom IsNot Nothing AndAlso address < _chrRom.Length Then
+                Return _chrRom(address)
+            End If
+            Return 0
+        End Function
 
         Public Sub Write(address As UShort, value As Byte)
             If address < &H2000US Then
                 ' Internal RAM (mirrored every 2KB)
                 _ram(address And &H7FFUS) = value
             ElseIf address < &H4000US Then
-                ' PPU registers (not fully implemented)
+                ' PPU registers ($2000-$3FFF, mirrored every 8 bytes)
+                If _ppu IsNot Nothing Then
+                    _ppu.WriteRegister(address, value)
+                End If
             ElseIf address < &H4020US Then
                 ' APU and I/O registers
             ElseIf address >= &H6000US AndAlso address < &H8000US Then

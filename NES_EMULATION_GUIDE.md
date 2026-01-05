@@ -22,7 +22,17 @@ The NES emulation is implemented in `NES.vb` with three main classes:
 - Manages graphics rendering
 - Runs at 3x the speed of the CPU (~5.37 MHz)
 - Renders 256x240 display at 60 Hz
-- Current implementation provides a basic frame rendering structure
+- **Implemented features:**
+  - PPU registers ($2000-$2007) for memory-mapped I/O
+  - 2KB VRAM for nametables
+  - 32 bytes of palette RAM
+  - Full 64-color NES palette
+  - Pattern table reading from CHR-ROM
+  - Background rendering using nametables and attribute tables
+  - Proper bit-plane decoding for tile graphics
+- **Not yet implemented:**
+  - Sprite rendering (OAM)
+  - Scrolling (PPUSCROLL values not used)
 
 #### 3. Memory
 - Manages memory mapping for the NES
@@ -30,6 +40,7 @@ The NES emulation is implemented in `NES.vb` with three main classes:
 - Loads and manages cartridge ROM data (PRG-ROM and CHR-ROM)
 - Parses iNES format ROM files
 - Supports basic mapper functionality
+- Routes PPU register access to PPU component
 
 ### UI Integration
 
@@ -74,7 +85,12 @@ The emulator supports iNES format ROM files (.nes):
 The NES emulation is a basic implementation with the following limitations:
 
 1. **CPU**: Only a subset of 6502 instructions are implemented
-2. **PPU**: Basic structure only - no actual pattern table, sprite, or background rendering
+2. **PPU**: Basic background rendering implemented - sprites and scrolling not yet supported
+   - ✓ Pattern table rendering from CHR-ROM
+   - ✓ Nametable and attribute table handling
+   - ✓ Background layer rendering
+   - ✗ Sprite rendering (OAM)
+   - ✗ Scrolling support
 3. **APU**: Not implemented (no sound)
 4. **Mappers**: Only basic support for Mapper 0
 5. **Accuracy**: Timing is approximate, not cycle-accurate
@@ -85,10 +101,9 @@ To improve NES emulation, the following could be added:
 
 1. Complete 6502 instruction set implementation
 2. Full PPU implementation with:
-   - Pattern table rendering
-   - Nametable and attribute table handling
-   - Sprite rendering with priority
-   - Scrolling support
+   - Sprite rendering with priority (OAM)
+   - Scrolling support (PPUSCROLL register)
+   - Fine scrolling and split-screen effects
 3. APU implementation for sound
 4. Additional mapper support (Mapper 1, 2, 3, etc.)
 5. Save state support
