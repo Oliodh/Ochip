@@ -10,6 +10,7 @@ Public Class Form1
     Private ReadOnly _nes As New NES()
     Private ReadOnly _frameTimer As New Timer()
     Private _nesBitmap As Bitmap
+    Private _chip8Bitmap As Bitmap
 
     Private Const Chip8ScaleLowRes As Integer = 10
     Private Const Chip8ScaleHighRes As Integer = 5
@@ -47,6 +48,7 @@ Public Class Form1
     
     Private Sub Form1_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs)
         _nesBitmap?.Dispose()
+        _chip8Bitmap?.Dispose()
     End Sub
 
     Private Shared Function TryMapToChip8Key(keyCode As Keys, ByRef chip8Key As Integer) As Boolean
@@ -239,6 +241,11 @@ Public Class Form1
             ' Resize window for CHIP-8 (start with low-res, will adjust dynamically)
             ClientSize = New Size(Chip8.DisplayWidthLowRes * Chip8ScaleLowRes, Chip8.DisplayHeightLowRes * Chip8ScaleLowRes)
             _lastChip8HighResMode = False
+            ' Create persistent bitmap for CHIP-8 rendering
+            If _chip8Bitmap IsNot Nothing Then
+                _chip8Bitmap.Dispose()
+            End If
+            _chip8Bitmap = New Bitmap(Chip8.DisplayWidthLowRes, Chip8.DisplayHeightLowRes, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
             ' Dispose NES bitmap if switching from NES
             If _nesBitmap IsNot Nothing Then
                 _nesBitmap.Dispose()
@@ -256,6 +263,11 @@ Public Class Form1
                 _nesBitmap.Dispose()
             End If
             _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+            ' Dispose CHIP-8 bitmap if switching from CHIP-8
+            If _chip8Bitmap IsNot Nothing Then
+                _chip8Bitmap.Dispose()
+                _chip8Bitmap = Nothing
+            End If
         End If
 
         _isPaused = False
@@ -278,6 +290,11 @@ Public Class Form1
                 _lastChip8HighResMode = _chip8.IsHighResMode
                 Dim scale As Integer = If(_chip8.IsHighResMode, Chip8ScaleHighRes, Chip8ScaleLowRes)
                 ClientSize = New Size(_chip8.DisplayWidth * scale, _chip8.DisplayHeight * scale)
+                ' Recreate bitmap with new resolution
+                If _chip8Bitmap IsNot Nothing Then
+                    _chip8Bitmap.Dispose()
+                End If
+                _chip8Bitmap = New Bitmap(_chip8.DisplayWidth, _chip8.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
             End If
 
             If _chip8.DrawFlag Then
@@ -300,21 +317,36 @@ Public Class Form1
         e.Graphics.Clear(Color.Black)
 
         If _currentEmulator = EmulatorType.Chip8 Then
-            e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
-            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half
-            
-            Dim scale As Integer = If(_chip8.IsHighResMode, Chip8ScaleHighRes, Chip8ScaleLowRes)
-            Dim width As Integer = _chip8.DisplayWidth
-            Dim height As Integer = _chip8.DisplayHeight
-
-            For y As Integer = 0 To height - 1
-                For x As Integer = 0 To width - 1
-                    Dim idx As Integer = (y * width) + x
-                    If _chip8.Display(idx) Then
-                        e.Graphics.FillRectangle(Brushes.White, x * scale, y * scale, scale, scale)
-                    End If
+            ' Render CHIP-8 display using persistent bitmap
+            If _chip8Bitmap IsNot Nothing Then
+                Dim width As Integer = _chip8.DisplayWidth
+                Dim height As Integer = _chip8.DisplayHeight
+                
+                ' Lock the bitmap for fast pixel manipulation
+                Dim bmpData As System.Drawing.Imaging.BitmapData = _chip8Bitmap.LockBits(
+                    New Rectangle(0, 0, _chip8Bitmap.Width, _chip8Bitmap.Height),
+                    System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                    System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+                
+                ' Create a buffer to hold ARGB pixel data
+                Dim pixelCount As Integer = width * height
+                Dim pixels(pixelCount - 1) As Integer
+                
+                ' Convert CHIP-8 display to ARGB pixels
+                For i As Integer = 0 To pixelCount - 1
+                    ' White (0xFFFFFFFF) if pixel is on, Black (0xFF000000) if off
+                    pixels(i) = If(_chip8.Display(i), &HFFFFFFFF, &HFF000000)
                 Next
-            Next
+                
+                ' Copy pixels to bitmap
+                System.Runtime.InteropServices.Marshal.Copy(pixels, 0, bmpData.Scan0, pixelCount)
+                _chip8Bitmap.UnlockBits(bmpData)
+                
+                ' Draw the bitmap scaled to the client area
+                e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
+                e.Graphics.PixelOffsetMode = PixelOffsetMode.Half
+                e.Graphics.DrawImage(_chip8Bitmap, 0, 0, ClientSize.Width, ClientSize.Height)
+            End If
         Else
             ' Render NES display using persistent bitmap
             If _nesBitmap IsNot Nothing Then
