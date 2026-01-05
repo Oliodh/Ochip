@@ -223,39 +223,59 @@ Public NotInheritable Class Chip8
 
                 V(15) = 0
                 
-                ' SCHIP: If n=0 and high-res mode, draw 16x16 sprite
-                If n = 0 AndAlso IsHighResMode Then
-                    ' Draw 16x16 sprite (SCHIP extended sprite)
-                    For row As Integer = 0 To 15
-                        Dim spriteByte1 As Byte = Memory(I + CUShort(row * 2))
-                        Dim spriteByte2 As Byte = Memory(I + CUShort(row * 2 + 1))
-                        
-                        For col As Integer = 0 To 15
-                            Dim bit As Boolean
-                            If col < 8 Then
-                                bit = (spriteByte1 And (CByte(&H80 >> col))) <> 0
-                            Else
-                                bit = (spriteByte2 And (CByte(&H80 >> (col - 8)))) <> 0
-                            End If
+                ' SCHIP: If n=0, draw extended sprite (16x16 in high-res, 8x16 in low-res)
+                If n = 0 Then
+                    If IsHighResMode Then
+                        ' Draw 16x16 sprite (SCHIP extended sprite in high-res mode)
+                        For row As Integer = 0 To 15
+                            Dim spriteByte1 As Byte = Memory(I + CUShort(row * 2))
+                            Dim spriteByte2 As Byte = Memory(I + CUShort(row * 2 + 1))
                             
-                            If bit Then
-                                Dim dx As Integer = px + col
-                                Dim dy As Integer = py + row
-                                
-                                ' Clip sprite pixels at screen boundaries
-                                If dx < DisplayWidth AndAlso dy < DisplayHeight Then
-                                    Dim idx As Integer = dy * DisplayWidth + dx
-                                    
-                                    If Display(idx) Then V(15) = 1
-                                    Display(idx) = Not Display(idx)
+                            For col As Integer = 0 To 15
+                                Dim bit As Boolean
+                                If col < 8 Then
+                                    bit = (spriteByte1 And (CByte(&H80 >> col))) <> 0
+                                Else
+                                    bit = (spriteByte2 And (CByte(&H80 >> (col - 8)))) <> 0
                                 End If
-                            End If
+                                
+                                If bit Then
+                                    Dim dx As Integer = px + col
+                                    Dim dy As Integer = py + row
+                                    
+                                    ' Clip sprite pixels at screen boundaries
+                                    If dx < DisplayWidth AndAlso dy < DisplayHeight Then
+                                        Dim idx As Integer = dy * DisplayWidth + dx
+                                        
+                                        If Display(idx) Then V(15) = 1
+                                        Display(idx) = Not Display(idx)
+                                    End If
+                                End If
+                            Next
                         Next
-                    Next
+                    Else
+                        ' Draw 8x16 sprite (SCHIP in low-res mode)
+                        For row As Integer = 0 To 15
+                            Dim sprite As Byte = Memory(I + CUShort(row))
+                            For col As Integer = 0 To 7
+                                If (sprite And (CByte(&H80 >> col))) <> 0 Then
+                                    Dim dx As Integer = px + col
+                                    Dim dy As Integer = py + row
+                                    
+                                    ' Clip sprite pixels at screen boundaries
+                                    If dx < DisplayWidth AndAlso dy < DisplayHeight Then
+                                        Dim idx As Integer = dy * DisplayWidth + dx
+
+                                        If Display(idx) Then V(15) = 1
+                                        Display(idx) = Not Display(idx)
+                                    End If
+                                End If
+                            Next
+                        Next
+                    End If
                 Else
                     ' Standard 8xN sprite drawing
-                    Dim spriteHeight As Integer = If(n = 0, 16, n)
-                    For row As Integer = 0 To spriteHeight - 1
+                    For row As Integer = 0 To n - 1
                         Dim sprite As Byte = Memory(I + CUShort(row))
                         For col As Integer = 0 To 7
                             If (sprite And (CByte(&H80 >> col))) <> 0 Then
