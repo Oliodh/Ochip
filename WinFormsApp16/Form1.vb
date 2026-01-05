@@ -322,6 +322,12 @@ Public Class Form1
                 Dim width As Integer = _chip8.DisplayWidth
                 Dim height As Integer = _chip8.DisplayHeight
                 
+                ' Ensure bitmap matches current display size
+                If _chip8Bitmap.Width <> width OrElse _chip8Bitmap.Height <> height Then
+                    _chip8Bitmap.Dispose()
+                    _chip8Bitmap = New Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+                End If
+                
                 ' Lock the bitmap for fast pixel manipulation
                 Dim bmpData As System.Drawing.Imaging.BitmapData = _chip8Bitmap.LockBits(
                     New Rectangle(0, 0, _chip8Bitmap.Width, _chip8Bitmap.Height),
