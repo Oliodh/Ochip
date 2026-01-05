@@ -172,7 +172,6 @@ Public Class Form1
         If _chip8.DrawFlag Then
             _chip8.DrawFlag = False
             Invalidate()
-            Update() ' Force synchronous repaint to prevent flickering
         End If
     End Sub
 
