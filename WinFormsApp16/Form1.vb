@@ -37,6 +37,13 @@ Public Class Form1
         _frameTimer.Interval = 1000 \ 60
         AddHandler _frameTimer.Tick, AddressOf OnFrameTick
         _frameTimer.Start()
+        
+        ' Handle form closing to clean up resources
+        AddHandler Me.FormClosing, AddressOf Form1_FormClosing
+    End Sub
+    
+    Private Sub Form1_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs)
+        _nesBitmap?.Dispose()
     End Sub
 
     Private Shared Function TryMapToChip8Key(keyCode As Keys, ByRef chip8Key As Integer) As Boolean

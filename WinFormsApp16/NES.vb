@@ -156,13 +156,15 @@ Public NotInheritable Class NES
                     PC = CUShort(PC + 2US)  ' JSR has 2-byte operand
                     ' 6502 pushes PC-1 to stack (return address - 1)
                     Dim returnAddr As UShort = CUShort(PC - 1US)
-                    Push(CByte(returnAddr >> 8))  ' Push high byte first
-                    Push(CByte(returnAddr And &HFF))  ' Push low byte second
+                    ' Push high byte first, then low byte (stack grows downward)
+                    Push(CByte(returnAddr >> 8))
+                    Push(CByte(returnAddr And &HFF))
                     PC = target
                     Return 6
 
                 Case &H60 ' RTS
-                    ' Stack grows downward, so pop in reverse: low byte first, then high byte
+                    ' Stack grows downward: last pushed (low) is popped first
+                    ' Pop() increments SP then reads, so this gets low byte first, then high byte
                     Dim lo As Byte = Pop()
                     Dim hi As Byte = Pop()
                     PC = CUShort((CUShort(hi) << 8) Or lo)
@@ -287,9 +289,17 @@ Public NotInheritable Class NES
             Dim chrSize As Integer = romData(5) * 8192   ' 8KB units
             _mapper = (romData(6) >> 4) Or (romData(7) And &HF0)
 
+            ' Validate ROM size
+            Dim expectedSize As Integer = 16 + prgSize + chrSize
+            If romData.Length < expectedSize Then
+                Throw New InvalidOperationException($"ROM file is too small. Expected at least {expectedSize} bytes, got {romData.Length} bytes.")
+            End If
+
             ' Load PRG-ROM
-            ReDim _prgRom(prgSize - 1)
-            Buffer.BlockCopy(romData, 16, _prgRom, 0, prgSize)
+            If prgSize > 0 Then
+                ReDim _prgRom(prgSize - 1)
+                Buffer.BlockCopy(romData, 16, _prgRom, 0, prgSize)
+            End If
 
             ' Load CHR-ROM
             If chrSize > 0 Then
