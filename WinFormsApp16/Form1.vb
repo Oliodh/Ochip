@@ -200,7 +200,6 @@ Public Class Form1
             If ofd.ShowDialog(Me) <> DialogResult.OK Then Return
 
             _lastRomPath = ofd.FileName
-            _romLoaded = False
 
             ' Detect emulator type by file extension
             Dim ext As String = Path.GetExtension(_lastRomPath).ToLowerInvariant()
