@@ -28,6 +28,7 @@ Public NotInheritable Class Chip8
 
     Public DrawFlag As Boolean
     Public IsHighResMode As Boolean
+    Public HasExited As Boolean
     
     ' Properties for dynamic display size
     Public ReadOnly Property DisplayWidth As Integer
@@ -57,6 +58,7 @@ Public NotInheritable Class Chip8
         SoundTimer = 0
         DrawFlag = True
         IsHighResMode = False
+        HasExited = False
 
         LoadFontSet()
         LoadExtendedFontSet()
@@ -83,6 +85,11 @@ Public NotInheritable Class Chip8
     End Sub
 
     Public Sub ExecuteCycle()
+        ' Check if program has exited
+        If HasExited Then
+            Return
+        End If
+        
         ' Need two bytes: Pc and Pc+1 must both be within 0..4095.
         If Pc > &HFFEUS Then
             Throw New InvalidOperationException($"PC out of bounds: 0x{Pc:X4}")
@@ -112,7 +119,7 @@ Public NotInheritable Class Chip8
                     
                     Case &HFDUS ' 00FD: Exit (SCHIP)
                         ' Exit interpreter - stop execution
-                        Pc = &HFFFEUS
+                        HasExited = True
                         
                     Case &HFEUS ' 00FE: Disable extended screen mode (SCHIP)
                         IsHighResMode = False
@@ -425,6 +432,9 @@ Public NotInheritable Class Chip8
         Dim width As Integer = DisplayWidth
         Dim height As Integer = DisplayHeight
         
+        ' Don't scroll if n is invalid or display is too small
+        If n <= 0 OrElse n >= height Then Return
+        
         ' Move pixels down from bottom to top
         For y As Integer = height - 1 To n Step -1
             For x As Integer = 0 To width - 1
@@ -447,6 +457,9 @@ Public NotInheritable Class Chip8
         Dim width As Integer = DisplayWidth
         Dim height As Integer = DisplayHeight
         
+        ' Don't scroll if display is too small
+        If width < 4 Then Return
+        
         For y As Integer = 0 To height - 1
             For x As Integer = 0 To width - 5
                 Dim srcIdx As Integer = y * width + x + 4
@@ -464,6 +477,9 @@ Public NotInheritable Class Chip8
         ' Scroll display right by 4 pixels (SCHIP)
         Dim width As Integer = DisplayWidth
         Dim height As Integer = DisplayHeight
+        
+        ' Don't scroll if display is too small
+        If width < 4 Then Return
         
         For y As Integer = 0 To height - 1
             For x As Integer = width - 1 To 4 Step -1
