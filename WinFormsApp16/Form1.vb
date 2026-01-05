@@ -16,6 +16,8 @@ Public Class Form1
     Private Const Chip8ScaleLowRes As Integer = 10
     Private Const Chip8ScaleHighRes As Integer = 5
     Private Const CyclesPerFrame As Integer = 12
+    Private Const PixelColorWhite As Integer = &HFFFFFFFF ' ARGB white
+    Private Const PixelColorBlack As Integer = &HFF000000 ' ARGB black
     
     Private _lastChip8HighResMode As Boolean = False
 
@@ -334,6 +336,14 @@ Public Class Form1
             EnsureChip8BitmapSize(width, height)
             
             If _chip8Bitmap IsNot Nothing AndAlso _chip8PixelBuffer IsNot Nothing Then
+                Dim pixelCount As Integer = width * height
+                
+                ' Verify buffer size matches expected pixel count for safety
+                If _chip8PixelBuffer.Length < pixelCount Then
+                    ' Buffer size mismatch - recreate it
+                    ReDim _chip8PixelBuffer(pixelCount - 1)
+                End If
+                
                 ' Lock the bitmap for fast pixel manipulation
                 Dim bmpData As System.Drawing.Imaging.BitmapData = _chip8Bitmap.LockBits(
                     New Rectangle(0, 0, _chip8Bitmap.Width, _chip8Bitmap.Height),
@@ -341,13 +351,11 @@ Public Class Form1
                     System.Drawing.Imaging.PixelFormat.Format32bppArgb)
                 
                 ' Convert CHIP-8 display to ARGB pixels using persistent buffer
-                Dim pixelCount As Integer = width * height
                 For i As Integer = 0 To pixelCount - 1
-                    ' White (0xFFFFFFFF) if pixel is on, Black (0xFF000000) if off
-                    _chip8PixelBuffer(i) = If(_chip8.Display(i), &HFFFFFFFF, &HFF000000)
+                    _chip8PixelBuffer(i) = If(_chip8.Display(i), PixelColorWhite, PixelColorBlack)
                 Next
                 
-                ' Copy pixels to bitmap
+                ' Copy pixels to bitmap (safe now - buffer size verified)
                 System.Runtime.InteropServices.Marshal.Copy(_chip8PixelBuffer, 0, bmpData.Scan0, pixelCount)
                 _chip8Bitmap.UnlockBits(bmpData)
                 
