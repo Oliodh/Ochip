@@ -261,10 +261,7 @@ Public Class Form1
             ' Create persistent bitmap and pixel buffer for CHIP-8 rendering
             EnsureChip8BitmapSize(Chip8.DisplayWidthLowRes, Chip8.DisplayHeightLowRes)
             ' Dispose NES bitmap if switching from NES
-            If _nesBitmap IsNot Nothing Then
-                _nesBitmap.Dispose()
-                _nesBitmap = Nothing
-            End If
+            _nesBitmap?.Dispose()
         Else
             _nes.Reset()
             _nes.LoadRom(inPath)
@@ -273,15 +270,10 @@ Public Class Form1
             ' Resize window for NES
             ClientSize = New Size(NES.DisplayWidth, NES.DisplayHeight)
             ' Create persistent bitmap for NES rendering
-            If _nesBitmap IsNot Nothing Then
-                _nesBitmap.Dispose()
-            End If
+            _nesBitmap?.Dispose()
             _nesBitmap = New Bitmap(NES.DisplayWidth, NES.DisplayHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
             ' Dispose CHIP-8 bitmap if switching from CHIP-8
-            If _chip8Bitmap IsNot Nothing Then
-                _chip8Bitmap.Dispose()
-                _chip8Bitmap = Nothing
-            End If
+            _chip8Bitmap?.Dispose()
         End If
 
         _isPaused = False
