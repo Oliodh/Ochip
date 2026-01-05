@@ -733,7 +733,9 @@ Public NotInheritable Class NES
             PC = CUShort(PC + 1US)
             If condition Then
                 Dim oldPC As UShort = PC
-                PC = CUShort(PC + offset)
+                ' Convert to signed integer to handle negative offsets properly, then mask to 16 bits
+                Dim newPC As Integer = CInt(oldPC) + CInt(offset)
+                PC = CUShort(newPC And &HFFFF)
                 ' Add 1 cycle for branch taken, +1 more if page boundary crossed
                 Return If((oldPC And &HFF00) <> (PC And &HFF00), 4, 3)
             End If
