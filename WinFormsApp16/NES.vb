@@ -153,16 +153,16 @@ Public NotInheritable Class NES
 
                 Case &H20 ' JSR
                     Dim target As UShort = ReadWord(PC)
-                    PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 2US)  ' JSR has 2-byte operand
                     ' 6502 pushes PC-1 to stack (return address - 1)
                     Dim returnAddr As UShort = CUShort(PC - 1US)
-                    Push(CByte(returnAddr >> 8))
-                    Push(CByte(returnAddr And &HFF))
+                    Push(CByte(returnAddr >> 8))  ' Push high byte first
+                    Push(CByte(returnAddr And &HFF))  ' Push low byte second
                     PC = target
                     Return 6
 
                 Case &H60 ' RTS
-                    ' Pop low byte first, then high byte
+                    ' Stack grows downward, so pop in reverse: low byte first, then high byte
                     Dim lo As Byte = Pop()
                     Dim hi As Byte = Pop()
                     PC = CUShort((CUShort(hi) << 8) Or lo)
