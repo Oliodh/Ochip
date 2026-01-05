@@ -1059,23 +1059,30 @@ Public NotInheritable Class NES
             Dim prgSize As Integer = romData(4) * 16384  ' 16KB units
             Dim chrSize As Integer = romData(5) * 8192   ' 8KB units
             _mapper = (romData(6) >> 4) Or (romData(7) And &HF0)
+            
+            ' Check for trainer (bit 2 of byte 6)
+            Dim hasTrainer As Boolean = (romData(6) And &H4) <> 0
+            Dim trainerSize As Integer = If(hasTrainer, 512, 0)
 
             ' Validate ROM size
-            Dim expectedSize As Integer = 16 + prgSize + chrSize
+            Dim expectedSize As Integer = 16 + trainerSize + prgSize + chrSize
             If romData.Length < expectedSize Then
                 Throw New InvalidOperationException($"ROM file is too small. Expected at least {expectedSize} bytes, got {romData.Length} bytes.")
             End If
 
+            ' Calculate data offset (skip header and trainer if present)
+            Dim dataOffset As Integer = 16 + trainerSize
+
             ' Load PRG-ROM
             If prgSize > 0 Then
                 ReDim _prgRom(prgSize - 1)
-                Buffer.BlockCopy(romData, 16, _prgRom, 0, prgSize)
+                Buffer.BlockCopy(romData, dataOffset, _prgRom, 0, prgSize)
             End If
 
             ' Load CHR-ROM
             If chrSize > 0 Then
                 ReDim _chrRom(chrSize - 1)
-                Buffer.BlockCopy(romData, 16 + prgSize, _chrRom, 0, chrSize)
+                Buffer.BlockCopy(romData, dataOffset + prgSize, _chrRom, 0, chrSize)
             End If
         End Sub
 
