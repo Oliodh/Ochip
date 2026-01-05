@@ -27,6 +27,7 @@ Public NotInheritable Class NES
         _cpu = New CPU6502(_memory)
         _ppu = New PPU(_memory, DisplayBuffer)
         _memory.SetPPU(_ppu)
+        _memory.SetControllers(Controller1, Controller2)
         Reset()
     End Sub
 
@@ -66,6 +67,13 @@ Public NotInheritable Class NES
             ' PPU runs 3 times faster than CPU
             For i As Integer = 0 To (cpuCycles * 3) - 1
                 _ppu.ExecuteCycle()
+                
+                ' Check for NMI (triggered when VBlank starts and PPUCTRL bit 7 is set)
+                If _ppu.NmiTriggered Then
+                    _ppu.NmiTriggered = False
+                    _cpu.TriggerNMI()
+                End If
+                
                 If _ppu.FrameComplete Then
                     DrawFlag = True
                     _ppu.FrameComplete = False
@@ -112,66 +120,547 @@ Public NotInheritable Class NES
             PC = CUShort(_memory.Read(&HFFFC) Or (CUShort(_memory.Read(&HFFFD)) << 8))
         End Sub
 
+        Public Sub TriggerNMI()
+            ' NMI (Non-Maskable Interrupt)
+            ' Push PC and status to stack, then jump to NMI vector
+            Push(CByte(PC >> 8))
+            Push(CByte(PC And &HFF))
+            Push(CByte(P And (Not FlagB)))
+            SetFlag(FlagI, True)
+            PC = CUShort(_memory.Read(&HFFFA) Or (CUShort(_memory.Read(&HFFFB)) << 8))
+        End Sub
+
         Public Function ExecuteInstruction() As Integer
-            ' Simplified 6502 instruction execution
+            ' Full 6502 instruction execution
             ' Returns number of cycles taken
             Dim opcode As Byte = _memory.Read(PC)
             PC = CUShort(PC + 1US)
 
-            ' Basic instruction set (simplified for demonstration)
             Select Case opcode
+                ' ADC - Add with Carry
+                Case &H69 ' ADC Immediate
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(CUShort(PC - 1US)), 2)
+                Case &H65 ' ADC Zero Page
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(_memory.Read(CUShort(PC - 1US))), 3)
+                Case &H75 ' ADC Zero Page,X
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(CByte((_memory.Read(CUShort(PC - 1US)) + X) And &HFF)), 4)
+                Case &H6D ' ADC Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Return ADC(_memory.Read(addr), 4)
+                Case &H7D ' ADC Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    Return ADC(_memory.Read(CUShort(addr + X)), If(pageCross, 5, 4))
+                Case &H79 ' ADC Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    Return ADC(_memory.Read(CUShort(addr + Y)), If(pageCross, 5, 4))
+                Case &H61 ' ADC (Indirect,X)
+                    Dim result As UShort = IndirectX()
+                    PC = CUShort(PC + 1US)
+                    Return ADC(_memory.Read(result), 6)
+                Case &H71 ' ADC (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    PC = CUShort(PC + 1US)
+                    Return ADC(_memory.Read(baseAddr), If(pageCross, 6, 5))
+
+                ' AND - Logical AND
+                Case &H29 ' AND Immediate
+                    A = CByte(A And _memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(A) : Return 2
+                Case &H25 ' AND Zero Page
+                    A = CByte(A And _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 3
+                Case &H35 ' AND Zero Page,X
+                    A = CByte(A And _memory.Read(CByte((_memory.Read(PC) + X) And &HFF))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 4
+                Case &H2D ' AND Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    A = CByte(A And _memory.Read(addr)) : SetZN(A) : Return 4
+                Case &H3D ' AND Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    A = CByte(A And _memory.Read(CUShort(addr + X))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H39 ' AND Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    A = CByte(A And _memory.Read(CUShort(addr + Y))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H21 ' AND (Indirect,X)
+                    A = CByte(A And _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
+                Case &H31 ' AND (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A And _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+
+                ' ASL - Arithmetic Shift Left
+                Case &H0A ' ASL Accumulator
+                    SetFlag(FlagC, (A And &H80) <> 0) : A = CByte((A << 1) And &HFF) : SetZN(A) : Return 2
+                Case &H06 ' ASL Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte((value << 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &H16 ' ASL Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte((value << 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H0E ' ASL Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte((value << 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H1E ' ASL Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte((value << 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+
+                ' BIT - Bit Test
+                Case &H24 ' BIT Zero Page
+                    Dim value As Byte = _memory.Read(_memory.Read(PC)) : PC = CUShort(PC + 1US)
+                    SetFlag(FlagZ, (A And value) = 0) : SetFlag(FlagV, (value And &H40) <> 0) : SetFlag(FlagN, (value And &H80) <> 0) : Return 3
+                Case &H2C ' BIT Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagZ, (A And value) = 0) : SetFlag(FlagV, (value And &H40) <> 0) : SetFlag(FlagN, (value And &H80) <> 0) : Return 4
+
+                ' Branch Instructions
+                Case &H10 ' BPL - Branch if Positive
+                    Return Branch((P And FlagN) = 0)
+                Case &H30 ' BMI - Branch if Minus
+                    Return Branch((P And FlagN) <> 0)
+                Case &H50 ' BVC - Branch if Overflow Clear
+                    Return Branch((P And FlagV) = 0)
+                Case &H70 ' BVS - Branch if Overflow Set
+                    Return Branch((P And FlagV) <> 0)
+                Case &H90 ' BCC - Branch if Carry Clear
+                    Return Branch((P And FlagC) = 0)
+                Case &HB0 ' BCS - Branch if Carry Set
+                    Return Branch((P And FlagC) <> 0)
+                Case &HD0 ' BNE - Branch if Not Equal
+                    Return Branch((P And FlagZ) = 0)
+                Case &HF0 ' BEQ - Branch if Equal
+                    Return Branch((P And FlagZ) <> 0)
+
+                ' BRK - Force Interrupt
+                Case &H0 ' BRK
+                    PC = CUShort(PC + 1US)
+                    Push(CByte(PC >> 8)) : Push(CByte(PC And &HFF))
+                    Push(CByte(P Or FlagB)) : SetFlag(FlagI, True)
+                    PC = CUShort(_memory.Read(&HFFFE) Or (CUShort(_memory.Read(&HFFFF)) << 8))
+                    Return 7
+
+                ' CMP, CPX, CPY - Compare
+                Case &HC9 ' CMP Immediate
+                    Compare(A, _memory.Read(PC)) : PC = CUShort(PC + 1US) : Return 2
+                Case &HC5 ' CMP Zero Page
+                    Compare(A, _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : Return 3
+                Case &HD5 ' CMP Zero Page,X
+                    Compare(A, _memory.Read(CByte((_memory.Read(PC) + X) And &HFF))) : PC = CUShort(PC + 1US) : Return 4
+                Case &HCD ' CMP Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Compare(A, _memory.Read(addr)) : Return 4
+                Case &HDD ' CMP Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    Compare(A, _memory.Read(CUShort(addr + X))) : Return If(pageCross, 5, 4)
+                Case &HD9 ' CMP Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    Compare(A, _memory.Read(CUShort(addr + Y))) : Return If(pageCross, 5, 4)
+                Case &HC1 ' CMP (Indirect,X)
+                    Compare(A, _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : Return 6
+                Case &HD1 ' CMP (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    Compare(A, _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : Return If(pageCross, 6, 5)
+                Case &HE0 ' CPX Immediate
+                    Compare(X, _memory.Read(PC)) : PC = CUShort(PC + 1US) : Return 2
+                Case &HE4 ' CPX Zero Page
+                    Compare(X, _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : Return 3
+                Case &HEC ' CPX Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Compare(X, _memory.Read(addr)) : Return 4
+                Case &HC0 ' CPY Immediate
+                    Compare(Y, _memory.Read(PC)) : PC = CUShort(PC + 1US) : Return 2
+                Case &HC4 ' CPY Zero Page
+                    Compare(Y, _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : Return 3
+                Case &HCC ' CPY Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Compare(Y, _memory.Read(addr)) : Return 4
+
+                ' DEC, DEX, DEY - Decrement
+                Case &HC6 ' DEC Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = CByte((_memory.Read(addr) - 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &HD6 ' DEC Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = CByte((_memory.Read(addr) - 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &HCE ' DEC Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = CByte((_memory.Read(addr) - 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &HDE ' DEC Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = CByte((_memory.Read(addr) - 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+                Case &HCA ' DEX
+                    X = CByte((X - 1) And &HFF) : SetZN(X) : Return 2
+                Case &H88 ' DEY
+                    Y = CByte((Y - 1) And &HFF) : SetZN(Y) : Return 2
+
+                ' EOR - Exclusive OR
+                Case &H49 ' EOR Immediate
+                    A = CByte(A Xor _memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(A) : Return 2
+                Case &H45 ' EOR Zero Page
+                    A = CByte(A Xor _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 3
+                Case &H55 ' EOR Zero Page,X
+                    A = CByte(A Xor _memory.Read(CByte((_memory.Read(PC) + X) And &HFF))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 4
+                Case &H4D ' EOR Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    A = CByte(A Xor _memory.Read(addr)) : SetZN(A) : Return 4
+                Case &H5D ' EOR Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    A = CByte(A Xor _memory.Read(CUShort(addr + X))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H59 ' EOR Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    A = CByte(A Xor _memory.Read(CUShort(addr + Y))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H41 ' EOR (Indirect,X)
+                    A = CByte(A Xor _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
+                Case &H51 ' EOR (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A Xor _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+
+                ' Flag Instructions
+                Case &H18 ' CLC
+                    SetFlag(FlagC, False) : Return 2
+                Case &H38 ' SEC
+                    SetFlag(FlagC, True) : Return 2
+                Case &H58 ' CLI
+                    SetFlag(FlagI, False) : Return 2
+                Case &H78 ' SEI
+                    SetFlag(FlagI, True) : Return 2
+                Case &HB8 ' CLV
+                    SetFlag(FlagV, False) : Return 2
+                Case &HD8 ' CLD
+                    SetFlag(FlagD, False) : Return 2
+                Case &HF8 ' SED
+                    SetFlag(FlagD, True) : Return 2
+
+                ' INC, INX, INY - Increment
+                Case &HE6 ' INC Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = CByte((_memory.Read(addr) + 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &HF6 ' INC Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = CByte((_memory.Read(addr) + 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &HEE ' INC Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = CByte((_memory.Read(addr) + 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &HFE ' INC Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = CByte((_memory.Read(addr) + 1) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+                Case &HE8 ' INX
+                    X = CByte((X + 1) And &HFF) : SetZN(X) : Return 2
+                Case &HC8 ' INY
+                    Y = CByte((Y + 1) And &HFF) : SetZN(Y) : Return 2
+
+                ' JMP - Jump
+                Case &H4C ' JMP Absolute
+                    PC = ReadWord(PC) : Return 3
+                Case &H6C ' JMP Indirect
+                    Dim addr As UShort = ReadWord(PC)
+                    ' 6502 bug: if addr is on page boundary, wrap within page
+                    If (addr And &HFF) = &HFF Then
+                        PC = CUShort(_memory.Read(addr) Or (CUShort(_memory.Read(addr And &HFF00US)) << 8))
+                    Else
+                        PC = CUShort(_memory.Read(addr) Or (CUShort(_memory.Read(CUShort(addr + 1US))) << 8))
+                    End If
+                    Return 5
+
+                ' JSR, RTS - Subroutine
+                Case &H20 ' JSR
+                    Dim target As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim returnAddr As UShort = CUShort(PC - 1US)
+                    Push(CByte(returnAddr >> 8)) : Push(CByte(returnAddr And &HFF))
+                    PC = target : Return 6
+                Case &H60 ' RTS
+                    Dim lo As Byte = Pop() : Dim hi As Byte = Pop()
+                    PC = CUShort(((CUShort(hi) << 8) Or lo) + 1US) : Return 6
+
+                ' LDA - Load Accumulator
+                Case &HA9 ' LDA Immediate
+                    A = _memory.Read(PC) : PC = CUShort(PC + 1US) : SetZN(A) : Return 2
+                Case &HA5 ' LDA Zero Page
+                    A = _memory.Read(_memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(A) : Return 3
+                Case &HB5 ' LDA Zero Page,X
+                    A = _memory.Read(CByte((_memory.Read(PC) + X) And &HFF)) : PC = CUShort(PC + 1US) : SetZN(A) : Return 4
+                Case &HAD ' LDA Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    A = _memory.Read(addr) : SetZN(A) : Return 4
+                Case &HBD ' LDA Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    A = _memory.Read(CUShort(addr + X)) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &HB9 ' LDA Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    A = _memory.Read(CUShort(addr + Y)) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &HA1 ' LDA (Indirect,X)
+                    A = _memory.Read(IndirectX()) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
+                Case &HB1 ' LDA (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = _memory.Read(baseAddr) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+
+                ' LDX - Load X
+                Case &HA2 ' LDX Immediate
+                    X = _memory.Read(PC) : PC = CUShort(PC + 1US) : SetZN(X) : Return 2
+                Case &HA6 ' LDX Zero Page
+                    X = _memory.Read(_memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(X) : Return 3
+                Case &HB6 ' LDX Zero Page,Y
+                    X = _memory.Read(CByte((_memory.Read(PC) + Y) And &HFF)) : PC = CUShort(PC + 1US) : SetZN(X) : Return 4
+                Case &HAE ' LDX Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    X = _memory.Read(addr) : SetZN(X) : Return 4
+                Case &HBE ' LDX Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    X = _memory.Read(CUShort(addr + Y)) : SetZN(X) : Return If(pageCross, 5, 4)
+
+                ' LDY - Load Y
+                Case &HA0 ' LDY Immediate
+                    Y = _memory.Read(PC) : PC = CUShort(PC + 1US) : SetZN(Y) : Return 2
+                Case &HA4 ' LDY Zero Page
+                    Y = _memory.Read(_memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(Y) : Return 3
+                Case &HB4 ' LDY Zero Page,X
+                    Y = _memory.Read(CByte((_memory.Read(PC) + X) And &HFF)) : PC = CUShort(PC + 1US) : SetZN(Y) : Return 4
+                Case &HAC ' LDY Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Y = _memory.Read(addr) : SetZN(Y) : Return 4
+                Case &HBC ' LDY Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    Y = _memory.Read(CUShort(addr + X)) : SetZN(Y) : Return If(pageCross, 5, 4)
+
+                ' LSR - Logical Shift Right
+                Case &H4A ' LSR Accumulator
+                    SetFlag(FlagC, (A And &H1) <> 0) : A = CByte(A >> 1) : SetZN(A) : Return 2
+                Case &H46 ' LSR Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte(value >> 1)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &H56 ' LSR Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte(value >> 1)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H4E ' LSR Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte(value >> 1)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H5E ' LSR Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte(value >> 1)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+
+                ' NOP - No Operation
                 Case &HEA ' NOP
                     Return 2
 
-                Case &HA9 ' LDA Immediate
-                    A = _memory.Read(PC)
+                ' ORA - Logical OR
+                Case &H09 ' ORA Immediate
+                    A = CByte(A Or _memory.Read(PC)) : PC = CUShort(PC + 1US) : SetZN(A) : Return 2
+                Case &H05 ' ORA Zero Page
+                    A = CByte(A Or _memory.Read(_memory.Read(PC))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 3
+                Case &H15 ' ORA Zero Page,X
+                    A = CByte(A Or _memory.Read(CByte((_memory.Read(PC) + X) And &HFF))) : PC = CUShort(PC + 1US) : SetZN(A) : Return 4
+                Case &H0D ' ORA Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    A = CByte(A Or _memory.Read(addr)) : SetZN(A) : Return 4
+                Case &H1D ' ORA Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    A = CByte(A Or _memory.Read(CUShort(addr + X))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H19 ' ORA Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    A = CByte(A Or _memory.Read(CUShort(addr + Y))) : SetZN(A) : Return If(pageCross, 5, 4)
+                Case &H01 ' ORA (Indirect,X)
+                    A = CByte(A Or _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
+                Case &H11 ' ORA (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A Or _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+
+                ' Register Instructions
+                Case &HAA ' TAX
+                    X = A : SetZN(X) : Return 2
+                Case &H8A ' TXA
+                    A = X : SetZN(A) : Return 2
+                Case &HA8 ' TAY
+                    Y = A : SetZN(Y) : Return 2
+                Case &H98 ' TYA
+                    A = Y : SetZN(A) : Return 2
+                Case &HBA ' TSX
+                    X = SP : SetZN(X) : Return 2
+                Case &H9A ' TXS
+                    SP = X : Return 2
+
+                ' ROL - Rotate Left
+                Case &H2A ' ROL Accumulator
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(1), CByte(0))
+                    SetFlag(FlagC, (A And &H80) <> 0) : A = CByte(((A << 1) Or carry) And &HFF) : SetZN(A) : Return 2
+                Case &H26 ' ROL Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(1), CByte(0))
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte(((value << 1) Or carry) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &H36 ' ROL Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(1), CByte(0))
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte(((value << 1) Or carry) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H2E ' ROL Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(1), CByte(0))
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte(((value << 1) Or carry) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H3E ' ROL Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(1), CByte(0))
+                    SetFlag(FlagC, (value And &H80) <> 0) : value = CByte(((value << 1) Or carry) And &HFF)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+
+                ' ROR - Rotate Right
+                Case &H6A ' ROR Accumulator
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(&H80), CByte(0))
+                    SetFlag(FlagC, (A And &H1) <> 0) : A = CByte((A >> 1) Or carry) : SetZN(A) : Return 2
+                Case &H66 ' ROR Zero Page
+                    Dim addr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(&H80), CByte(0))
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte((value >> 1) Or carry)
+                    _memory.Write(addr, value) : SetZN(value) : Return 5
+                Case &H76 ' ROR Zero Page,X
+                    Dim addr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(&H80), CByte(0))
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte((value >> 1) Or carry)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H6E ' ROR Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(&H80), CByte(0))
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte((value >> 1) Or carry)
+                    _memory.Write(addr, value) : SetZN(value) : Return 6
+                Case &H7E ' ROR Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    Dim value As Byte = _memory.Read(addr)
+                    Dim carry As Byte = If((P And FlagC) <> 0, CByte(&H80), CByte(0))
+                    SetFlag(FlagC, (value And &H1) <> 0) : value = CByte((value >> 1) Or carry)
+                    _memory.Write(addr, value) : SetZN(value) : Return 7
+
+                ' RTI - Return from Interrupt
+                Case &H40 ' RTI
+                    P = Pop() : Dim lo As Byte = Pop() : Dim hi As Byte = Pop()
+                    PC = CUShort((CUShort(hi) << 8) Or lo) : Return 6
+
+                ' SBC - Subtract with Carry
+                Case &HE9 ' SBC Immediate
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(CUShort(PC - 1US)), 2)
+                Case &HE5 ' SBC Zero Page
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(_memory.Read(CUShort(PC - 1US))), 3)
+                Case &HF5 ' SBC Zero Page,X
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(CByte((_memory.Read(CUShort(PC - 1US)) + X) And &HFF)), 4)
+                Case &HED ' SBC Absolute
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Return SBC(_memory.Read(addr), 4)
+                Case &HFD ' SBC Absolute,X
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + X) And &HFF00)
+                    Return SBC(_memory.Read(CUShort(addr + X)), If(pageCross, 5, 4))
+                Case &HF9 ' SBC Absolute,Y
+                    Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
+                    Return SBC(_memory.Read(CUShort(addr + Y)), If(pageCross, 5, 4))
+                Case &HE1 ' SBC (Indirect,X)
+                    Dim result As UShort = IndirectX()
                     PC = CUShort(PC + 1US)
-                    SetZN(A)
-                    Return 2
+                    Return SBC(_memory.Read(result), 6)
+                Case &HF1 ' SBC (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    PC = CUShort(PC + 1US)
+                    Return SBC(_memory.Read(baseAddr), If(pageCross, 6, 5))
 
-                Case &HAD ' LDA Absolute
-                    Dim addr As UShort = ReadWord(PC)
-                    PC = CUShort(PC + 2US)
-                    A = _memory.Read(addr)
-                    SetZN(A)
-                    Return 4
-
+                ' STA - Store Accumulator
                 Case &H85 ' STA Zero Page
-                    Dim zpAddr As Byte = _memory.Read(PC)
-                    PC = CUShort(PC + 1US)
-                    _memory.Write(zpAddr, A)
-                    Return 3
-
+                    Dim zpAddr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, A) : Return 3
+                Case &H95 ' STA Zero Page,X
+                    Dim zpAddr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, A) : Return 4
                 Case &H8D ' STA Absolute
-                    Dim absAddr As UShort = ReadWord(PC)
-                    PC = CUShort(PC + 2US)
-                    _memory.Write(absAddr, A)
-                    Return 4
+                    Dim absAddr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    _memory.Write(absAddr, A) : Return 4
+                Case &H9D ' STA Absolute,X
+                    Dim addr As UShort = CUShort(ReadWord(PC) + X) : PC = CUShort(PC + 2US)
+                    _memory.Write(addr, A) : Return 5
+                Case &H99 ' STA Absolute,Y
+                    Dim addr As UShort = CUShort(ReadWord(PC) + Y) : PC = CUShort(PC + 2US)
+                    _memory.Write(addr, A) : Return 5
+                Case &H81 ' STA (Indirect,X)
+                    _memory.Write(IndirectX(), A) : PC = CUShort(PC + 1US) : Return 6
+                Case &H91 ' STA (Indirect),Y
+                    _memory.Write(IndirectY(), A) : PC = CUShort(PC + 1US) : Return 6
 
-                Case &H4C ' JMP Absolute
-                    PC = ReadWord(PC)
-                    Return 3
+                ' Stack Instructions
+                Case &H48 ' PHA
+                    Push(A) : Return 3
+                Case &H68 ' PLA
+                    A = Pop() : SetZN(A) : Return 4
+                Case &H08 ' PHP
+                    Push(CByte(P Or FlagB Or FlagU)) : Return 3
+                Case &H28 ' PLP
+                    P = CByte((Pop() And (Not FlagB)) Or FlagU) : Return 4
 
-                Case &H20 ' JSR
-                    Dim target As UShort = ReadWord(PC)
-                    PC = CUShort(PC + 2US)  ' JSR has 2-byte operand
-                    ' 6502 pushes PC-1 to stack (return address - 1)
-                    Dim returnAddr As UShort = CUShort(PC - 1US)
-                    ' Push high byte first, then low byte (stack grows downward)
-                    Push(CByte(returnAddr >> 8))
-                    Push(CByte(returnAddr And &HFF))
-                    PC = target
-                    Return 6
+                ' STX - Store X
+                Case &H86 ' STX Zero Page
+                    Dim zpAddr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, X) : Return 3
+                Case &H96 ' STX Zero Page,Y
+                    Dim zpAddr As Byte = CByte((_memory.Read(PC) + Y) And &HFF) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, X) : Return 4
+                Case &H8E ' STX Absolute
+                    Dim absAddr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    _memory.Write(absAddr, X) : Return 4
 
-                Case &H60 ' RTS
-                    ' Stack grows downward: last pushed (low) is popped first
-                    ' Pop() increments SP then reads, so this gets low byte first, then high byte
-                    Dim lo As Byte = Pop()
-                    Dim hi As Byte = Pop()
-                    PC = CUShort((CUShort(hi) << 8) Or lo)
-                    ' Add 1 to the return address (6502 convention)
-                    PC = CUShort(PC + 1US)
-                    Return 6
+                ' STY - Store Y
+                Case &H84 ' STY Zero Page
+                    Dim zpAddr As Byte = _memory.Read(PC) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, Y) : Return 3
+                Case &H94 ' STY Zero Page,X
+                    Dim zpAddr As Byte = CByte((_memory.Read(PC) + X) And &HFF) : PC = CUShort(PC + 1US)
+                    _memory.Write(zpAddr, Y) : Return 4
+                Case &H8C ' STY Absolute
+                    Dim absAddr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
+                    _memory.Write(absAddr, Y) : Return 4
 
                 Case Else
                     ' Unimplemented instruction - just NOP
@@ -208,6 +697,59 @@ Public NotInheritable Class NES
             SP = CByte((SP + 1) And &HFF)
             Return _memory.Read(CUShort(SP) + &H100US)
         End Function
+
+        Private Sub SetFlag(flag As Byte, condition As Boolean)
+            If condition Then
+                P = CByte(P Or flag)
+            Else
+                P = CByte(P And (Not flag))
+            End If
+        End Sub
+
+        Private Sub Compare(reg As Byte, value As Byte)
+            Dim result As Integer = reg - value
+            SetFlag(FlagC, result >= 0)
+            SetFlag(FlagZ, (result And &HFF) = 0)
+            SetFlag(FlagN, (result And &H80) <> 0)
+        End Sub
+
+        Private Function ADC(value As Byte, cycles As Integer) As Integer
+            Dim sum As Integer = A + value + If((P And FlagC) <> 0, 1, 0)
+            SetFlag(FlagC, sum > 255)
+            SetFlag(FlagV, ((A Xor value) And &H80) = 0 AndAlso ((A Xor sum) And &H80) <> 0)
+            A = CByte(sum And &HFF)
+            SetZN(A)
+            Return cycles
+        End Function
+
+        Private Function SBC(value As Byte, cycles As Integer) As Integer
+            ' SBC is equivalent to ADC with inverted value
+            Dim invValue As Byte = CByte((Not value) And &HFF)
+            Return ADC(invValue, cycles)
+        End Function
+
+        Private Function Branch(condition As Boolean) As Integer
+            Dim offset As SByte = CSByte(_memory.Read(PC))
+            PC = CUShort(PC + 1US)
+            If condition Then
+                Dim oldPC As UShort = PC
+                PC = CUShort(PC + offset)
+                ' Add 1 cycle for branch taken, +1 more if page boundary crossed
+                Return If((oldPC And &HFF00) <> (PC And &HFF00), 4, 3)
+            End If
+            Return 2
+        End Function
+
+        Private Function IndirectX() As UShort
+            Dim zpAddr As Byte = CByte((_memory.Read(PC) + X) And &HFF)
+            Return CUShort(_memory.Read(zpAddr) Or (CUShort(_memory.Read(CByte((zpAddr + 1) And &HFF))) << 8))
+        End Function
+
+        Private Function IndirectY() As UShort
+            Dim zpAddr As Byte = _memory.Read(PC)
+            Dim addr As UShort = CUShort(_memory.Read(zpAddr) Or (CUShort(_memory.Read(CByte((zpAddr + 1) And &HFF))) << 8))
+            Return CUShort(addr + Y)
+        End Function
     End Class
 
     Public NotInheritable Class PPU
@@ -218,6 +760,7 @@ Public NotInheritable Class NES
         Private _scanline As Integer
 
         Public FrameComplete As Boolean
+        Public NmiTriggered As Boolean
 
         ' PPU registers
         Private _ppuCtrl As Byte        ' $2000 PPUCTRL
@@ -260,6 +803,7 @@ Public NotInheritable Class NES
             _cycle = 0
             _scanline = 0
             FrameComplete = False
+            NmiTriggered = False
             _ppuCtrl = 0
             _ppuMask = 0
             _ppuStatus = &HA0  ' Bits 7 and 5 set (VBlank and sprite overflow flags cleared, unused bit set)
@@ -277,6 +821,20 @@ Public NotInheritable Class NES
         Public Sub ExecuteCycle()
             ' Simplified PPU cycle execution
             _cycle += 1
+
+            ' Set VBlank flag at scanline 241 and trigger NMI if enabled
+            If _scanline = 241 AndAlso _cycle = 1 Then
+                _ppuStatus = CByte(_ppuStatus Or &H80) ' Set VBlank flag (bit 7)
+                ' Trigger NMI if PPUCTRL bit 7 is set
+                If (_ppuCtrl And &H80) <> 0 Then
+                    NmiTriggered = True
+                End If
+            End If
+
+            ' Clear VBlank flag at scanline 261 (pre-render scanline)
+            If _scanline = 261 AndAlso _cycle = 1 Then
+                _ppuStatus = CByte(_ppuStatus And (Not &H80)) ' Clear VBlank flag
+            End If
 
             If _cycle >= 341 Then
                 _cycle = 0
@@ -457,6 +1015,11 @@ Public NotInheritable Class NES
         Private _chrRom As Byte()                     ' CHR-ROM from cartridge
         Private _mapper As Integer                    ' Mapper number
         Private _ppu As PPU                           ' Reference to PPU for register access
+        Private _controller1 As Boolean()             ' Reference to Controller 1 state
+        Private _controller2 As Boolean()             ' Reference to Controller 2 state
+        Private _controller1Shift As Byte             ' Controller 1 shift register
+        Private _controller2Shift As Byte             ' Controller 2 shift register
+        Private _controllerStrobe As Boolean          ' Controller strobe state
 
         Public Sub New()
             _prgRom = Array.Empty(Of Byte)()
@@ -465,6 +1028,11 @@ Public NotInheritable Class NES
         
         Public Sub SetPPU(ppu As PPU)
             _ppu = ppu
+        End Sub
+
+        Public Sub SetControllers(controller1 As Boolean(), controller2 As Boolean())
+            _controller1 = controller1
+            _controller2 = controller2
         End Sub
 
         Public Sub LoadCartridge(romData As Byte())
@@ -518,8 +1086,24 @@ Public NotInheritable Class NES
                     Return _ppu.ReadRegister(address)
                 End If
                 Return 0
+            ElseIf address = &H4016US Then
+                ' Controller 1 ($4016)
+                If _controller1 IsNot Nothing Then
+                    Dim result As Byte = If((_controller1Shift And 1) <> 0, CByte(1), CByte(0))
+                    _controller1Shift = CByte(_controller1Shift >> 1)
+                    Return result
+                End If
+                Return 0
+            ElseIf address = &H4017US Then
+                ' Controller 2 ($4017)
+                If _controller2 IsNot Nothing Then
+                    Dim result As Byte = If((_controller2Shift And 1) <> 0, CByte(1), CByte(0))
+                    _controller2Shift = CByte(_controller2Shift >> 1)
+                    Return result
+                End If
+                Return 0
             ElseIf address < &H4020US Then
-                ' APU and I/O registers
+                ' Other APU and I/O registers
                 Return 0
             ElseIf address >= &H8000US Then
                 ' PRG-ROM
@@ -556,8 +1140,35 @@ Public NotInheritable Class NES
                 If _ppu IsNot Nothing Then
                     _ppu.WriteRegister(address, value)
                 End If
+            ElseIf address = &H4016US Then
+                ' Controller strobe ($4016)
+                Dim wasHigh As Boolean = _controllerStrobe
+                _controllerStrobe = (value And 1) <> 0
+                
+                ' On falling edge of strobe (high to low), latch controller state
+                If wasHigh AndAlso Not _controllerStrobe Then
+                    ' Load controller 1 state into shift register
+                    If _controller1 IsNot Nothing Then
+                        _controller1Shift = 0
+                        For i As Integer = 0 To 7
+                            If _controller1(i) Then
+                                _controller1Shift = CByte(_controller1Shift Or (1 << i))
+                            End If
+                        Next
+                    End If
+                    
+                    ' Load controller 2 state into shift register
+                    If _controller2 IsNot Nothing Then
+                        _controller2Shift = 0
+                        For i As Integer = 0 To 7
+                            If _controller2(i) Then
+                                _controller2Shift = CByte(_controller2Shift Or (1 << i))
+                            End If
+                        Next
+                    End If
+                End If
             ElseIf address < &H4020US Then
-                ' APU and I/O registers
+                ' Other APU and I/O registers
             ElseIf address >= &H6000US AndAlso address < &H8000US Then
                 ' SRAM (not implemented)
             End If

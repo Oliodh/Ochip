@@ -15,7 +15,18 @@ The NES emulation is implemented in `NES.vb` with three main classes:
 #### 1. CPU6502
 - Implements the 6502 microprocessor used in the NES
 - Handles instruction execution and register management
-- Current implementation includes basic opcodes (LDA, STA, JMP, JSR, RTS, NOP)
+- **Full 6502 instruction set implementation** including:
+  - Arithmetic operations (ADC, SBC)
+  - Logical operations (AND, ORA, EOR)
+  - Shift/rotate operations (ASL, LSR, ROL, ROR)
+  - Increment/decrement (INC, DEC, INX, DEX, INY, DEY)
+  - Comparison operations (CMP, CPX, CPY)
+  - Branch instructions (BEQ, BNE, BCS, BCC, BMI, BPL, BVS, BVC)
+  - Stack operations (PHA, PLA, PHP, PLP)
+  - Status flag operations (SEC, CLC, SEI, CLI, SED, CLD, CLV)
+  - Transfer operations (TAX, TXA, TAY, TYA, TSX, TXS)
+  - All addressing modes (Immediate, Zero Page, Absolute, Indexed, Indirect)
+  - Interrupt handling (BRK, RTI, NMI)
 - Executes approximately 1.79 MHz worth of cycles per frame
 
 #### 2. PPU (Picture Processing Unit)
@@ -30,6 +41,8 @@ The NES emulation is implemented in `NES.vb` with three main classes:
   - Pattern table reading from CHR-ROM
   - Background rendering using nametables and attribute tables
   - Proper bit-plane decoding for tile graphics
+  - VBlank flag (bit 7 of PPUSTATUS)
+  - NMI interrupt on VBlank
 - **Not yet implemented:**
   - Sprite rendering (OAM)
   - Scrolling (PPUSCROLL values not used)
@@ -41,6 +54,7 @@ The NES emulation is implemented in `NES.vb` with three main classes:
 - Parses iNES format ROM files
 - Supports basic mapper functionality
 - Routes PPU register access to PPU component
+- Controller input via memory-mapped I/O ($4016/$4017)
 
 ### UI Integration
 
@@ -82,18 +96,21 @@ The emulator supports iNES format ROM files (.nes):
 
 ## Current Limitations
 
-The NES emulation is a basic implementation with the following limitations:
+The NES emulation has been significantly improved with full 6502 CPU support. Current limitations:
 
-1. **CPU**: Only a subset of 6502 instructions are implemented
+1. **CPU**: Complete 6502 instruction set implemented ✓
 2. **PPU**: Basic background rendering implemented - sprites and scrolling not yet supported
    - ✓ Pattern table rendering from CHR-ROM
    - ✓ Nametable and attribute table handling
    - ✓ Background layer rendering
+   - ✓ VBlank flag and NMI interrupt support
    - ✗ Sprite rendering (OAM)
    - ✗ Scrolling support
 3. **APU**: Not implemented (no sound)
 4. **Mappers**: Only basic support for Mapper 0
 5. **Accuracy**: Timing is approximate, not cycle-accurate
+
+The emulator should now be capable of running many NES games that rely primarily on background graphics, including Donkey Kong and similar early titles.
 
 ## Future Enhancements
 
