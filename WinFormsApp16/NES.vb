@@ -238,7 +238,7 @@ Public NotInheritable Class NES
         ' Palette RAM - 32 bytes
         Private ReadOnly _paletteRam(31) As Byte
         
-        ' NES color palette (simplified - actual NES has 64 colors)
+        ' NES color palette (64 colors)
         Private Shared ReadOnly NesPalette As Integer() = {
             &HFF666666, &HFF002A88, &HFF1412A7, &HFF3B00A4, &HFF5C007E, &HFF6E0040, &HFF6C0600, &HFF561D00,
             &HFF333500, &HFF0B4800, &HFF005200, &HFF004F08, &HFF00404D, &HFF000000, &HFF000000, &HFF000000,
@@ -332,7 +332,8 @@ Public NotInheritable Class NES
                             Dim colorIndex As Byte = CByte((colorHigh << 1) Or colorLow)
                             
                             ' Get color from palette
-                            Dim paletteAddr As Integer = (paletteNum * 4) + colorIndex
+                            ' Color index 0 always uses the universal background color (palette address 0)
+                            Dim paletteAddr As Integer = If(colorIndex = 0, 0, (paletteNum * 4) + colorIndex)
                             Dim paletteValue As Byte = _paletteRam(paletteAddr)
                             Dim color As Integer = NesPalette(paletteValue And &H3F)
                             
@@ -429,12 +430,13 @@ Public NotInheritable Class NES
                     _addressLatch = Not _addressLatch
                 Case &H6US ' PPUADDR
                     If Not _addressLatch Then
+                        ' First write: high byte
                         _ppuAddr = CUShort((CUShort(value) << 8) Or (_ppuAddr And &HFFUS))
-                        _addressLatch = True
                     Else
+                        ' Second write: low byte
                         _ppuAddr = CUShort((_ppuAddr And &HFF00US) Or value)
-                        _addressLatch = False
                     End If
+                    _addressLatch = Not _addressLatch
                 Case &H7US ' PPUDATA
                     WriteVRAM(_ppuAddr, value)
                     Dim increment As UShort = If((_ppuCtrl And &H4) <> 0, 32US, 1US)
