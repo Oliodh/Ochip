@@ -283,7 +283,7 @@ Public Class Form1
             Invalidate()
         Catch ex As Exception
             _romLoaded = False
-            MessageBox.Show(Me, "Failed to load ROM. Please confirm the file is a valid CHIP-8 or NES ROM." & Environment.NewLine & "Details: " & ex.Message, "ROM Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            MessageBox.Show(Me, $"Failed to load ROM. Please confirm the file is a valid CHIP-8 or NES ROM.{Environment.NewLine}Details: {ex.Message}", "ROM Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 
