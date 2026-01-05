@@ -338,26 +338,24 @@ Public Class Form1
             If _chip8Bitmap IsNot Nothing AndAlso _chip8PixelBuffer IsNot Nothing Then
                 Dim pixelCount As Integer = width * height
                 
-                ' Verify buffer size matches expected pixel count for safety
-                If _chip8PixelBuffer.Length < pixelCount Then
-                    ' Buffer size mismatch - recreate it
-                    ReDim _chip8PixelBuffer(pixelCount - 1)
-                End If
-                
                 ' Lock the bitmap for fast pixel manipulation
                 Dim bmpData As System.Drawing.Imaging.BitmapData = _chip8Bitmap.LockBits(
                     New Rectangle(0, 0, _chip8Bitmap.Width, _chip8Bitmap.Height),
                     System.Drawing.Imaging.ImageLockMode.WriteOnly,
                     System.Drawing.Imaging.PixelFormat.Format32bppArgb)
                 
-                ' Convert CHIP-8 display to ARGB pixels using persistent buffer
-                For i As Integer = 0 To pixelCount - 1
-                    _chip8PixelBuffer(i) = If(_chip8.Display(i), PixelColorWhite, PixelColorBlack)
-                Next
-                
-                ' Copy pixels to bitmap (safe now - buffer size verified)
-                System.Runtime.InteropServices.Marshal.Copy(_chip8PixelBuffer, 0, bmpData.Scan0, pixelCount)
-                _chip8Bitmap.UnlockBits(bmpData)
+                Try
+                    ' Convert CHIP-8 display to ARGB pixels using persistent buffer
+                    For i As Integer = 0 To pixelCount - 1
+                        _chip8PixelBuffer(i) = If(_chip8.Display(i), PixelColorWhite, PixelColorBlack)
+                    Next
+                    
+                    ' Copy pixels to bitmap
+                    System.Runtime.InteropServices.Marshal.Copy(_chip8PixelBuffer, 0, bmpData.Scan0, pixelCount)
+                Finally
+                    ' Always unlock the bitmap, even if an exception occurs
+                    _chip8Bitmap.UnlockBits(bmpData)
+                End Try
                 
                 ' Draw the bitmap scaled to the client area
                 e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
