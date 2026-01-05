@@ -139,11 +139,11 @@ Public NotInheritable Class NES
             Select Case opcode
                 ' ADC - Add with Carry
                 Case &H69 ' ADC Immediate
-                    Return ADC(_memory.Read(PC), 2) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(CUShort(PC - 1US)), 2)
                 Case &H65 ' ADC Zero Page
-                    Return ADC(_memory.Read(_memory.Read(PC)), 3) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(_memory.Read(CUShort(PC - 1US))), 3)
                 Case &H75 ' ADC Zero Page,X
-                    Return ADC(_memory.Read(CByte((_memory.Read(PC) + X) And &HFF)), 4) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return ADC(_memory.Read(CByte((_memory.Read(CUShort(PC - 1US)) + X) And &HFF)), 4)
                 Case &H6D ' ADC Absolute
                     Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
                     Return ADC(_memory.Read(addr), 4)
@@ -156,12 +156,14 @@ Public NotInheritable Class NES
                     Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
                     Return ADC(_memory.Read(CUShort(addr + Y)), If(pageCross, 5, 4))
                 Case &H61 ' ADC (Indirect,X)
-                    Return ADC(_memory.Read(IndirectX()), 6) : PC = CUShort(PC + 1US)
-                Case &H71 ' ADC (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
+                    Dim result As UShort = IndirectX()
                     PC = CUShort(PC + 1US)
-                    Return ADC(_memory.Read(addr), If(pageCross, 6, 5))
+                    Return ADC(_memory.Read(result), 6)
+                Case &H71 ' ADC (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    PC = CUShort(PC + 1US)
+                    Return ADC(_memory.Read(baseAddr), If(pageCross, 6, 5))
 
                 ' AND - Logical AND
                 Case &H29 ' AND Immediate
@@ -184,9 +186,9 @@ Public NotInheritable Class NES
                 Case &H21 ' AND (Indirect,X)
                     A = CByte(A And _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
                 Case &H31 ' AND (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
-                    A = CByte(A And _memory.Read(addr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A And _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
 
                 ' ASL - Arithmetic Shift Left
                 Case &H0A ' ASL Accumulator
@@ -268,9 +270,9 @@ Public NotInheritable Class NES
                 Case &HC1 ' CMP (Indirect,X)
                     Compare(A, _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : Return 6
                 Case &HD1 ' CMP (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
-                    Compare(A, _memory.Read(addr)) : PC = CUShort(PC + 1US) : Return If(pageCross, 6, 5)
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    Compare(A, _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : Return If(pageCross, 6, 5)
                 Case &HE0 ' CPX Immediate
                     Compare(X, _memory.Read(PC)) : PC = CUShort(PC + 1US) : Return 2
                 Case &HE4 ' CPX Zero Page
@@ -329,9 +331,9 @@ Public NotInheritable Class NES
                 Case &H41 ' EOR (Indirect,X)
                     A = CByte(A Xor _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
                 Case &H51 ' EOR (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
-                    A = CByte(A Xor _memory.Read(addr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A Xor _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
 
                 ' Flag Instructions
                 Case &H18 ' CLC
@@ -415,9 +417,9 @@ Public NotInheritable Class NES
                 Case &HA1 ' LDA (Indirect,X)
                     A = _memory.Read(IndirectX()) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
                 Case &HB1 ' LDA (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
-                    A = _memory.Read(addr) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = _memory.Read(baseAddr) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
 
                 ' LDX - Load X
                 Case &HA2 ' LDX Immediate
@@ -498,9 +500,9 @@ Public NotInheritable Class NES
                 Case &H01 ' ORA (Indirect,X)
                     A = CByte(A Or _memory.Read(IndirectX())) : PC = CUShort(PC + 1US) : SetZN(A) : Return 6
                 Case &H11 ' ORA (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
-                    A = CByte(A Or _memory.Read(addr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    A = CByte(A Or _memory.Read(baseAddr)) : PC = CUShort(PC + 1US) : SetZN(A) : Return If(pageCross, 6, 5)
 
                 ' Register Instructions
                 Case &HAA ' TAX
@@ -581,11 +583,11 @@ Public NotInheritable Class NES
 
                 ' SBC - Subtract with Carry
                 Case &HE9 ' SBC Immediate
-                    Return SBC(_memory.Read(PC), 2) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(CUShort(PC - 1US)), 2)
                 Case &HE5 ' SBC Zero Page
-                    Return SBC(_memory.Read(_memory.Read(PC)), 3) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(_memory.Read(CUShort(PC - 1US))), 3)
                 Case &HF5 ' SBC Zero Page,X
-                    Return SBC(_memory.Read(CByte((_memory.Read(PC) + X) And &HFF)), 4) : PC = CUShort(PC + 1US)
+                    PC = CUShort(PC + 1US) : Return SBC(_memory.Read(CByte((_memory.Read(CUShort(PC - 1US)) + X) And &HFF)), 4)
                 Case &HED ' SBC Absolute
                     Dim addr As UShort = ReadWord(PC) : PC = CUShort(PC + 2US)
                     Return SBC(_memory.Read(addr), 4)
@@ -598,12 +600,14 @@ Public NotInheritable Class NES
                     Dim pageCross As Boolean = (addr And &HFF00) <> ((addr + Y) And &HFF00)
                     Return SBC(_memory.Read(CUShort(addr + Y)), If(pageCross, 5, 4))
                 Case &HE1 ' SBC (Indirect,X)
-                    Return SBC(_memory.Read(IndirectX()), 6) : PC = CUShort(PC + 1US)
-                Case &HF1 ' SBC (Indirect),Y
-                    Dim addr As UShort = IndirectY()
-                    Dim pageCross As Boolean = (addr And &HFF00) <> ((addr - Y) And &HFF00)
+                    Dim result As UShort = IndirectX()
                     PC = CUShort(PC + 1US)
-                    Return SBC(_memory.Read(addr), If(pageCross, 6, 5))
+                    Return SBC(_memory.Read(result), 6)
+                Case &HF1 ' SBC (Indirect),Y
+                    Dim baseAddr As UShort = IndirectY()
+                    Dim pageCross As Boolean = ((baseAddr - Y) And &HFF00) <> (baseAddr And &HFF00)
+                    PC = CUShort(PC + 1US)
+                    Return SBC(_memory.Read(baseAddr), If(pageCross, 6, 5))
 
                 ' STA - Store Accumulator
                 Case &H85 ' STA Zero Page
