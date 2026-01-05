@@ -250,6 +250,8 @@ Public Class Form1
     End Sub
 
     Private Sub LoadAndStartRom(inPath As String)
+        _romLoaded = False
+        Dim emulatorName As String = If(_currentEmulator = EmulatorType.Chip8, "CHIP-8", "NES")
         Try
             If _currentEmulator = EmulatorType.Chip8 Then
                 _chip8.Reset()
@@ -282,8 +284,7 @@ Public Class Form1
             ButtonPause.Text = "Pause"
             Invalidate()
         Catch ex As Exception
-            _romLoaded = False
-            MessageBox.Show(Me, $"Failed to load ROM. Please confirm the file is a valid CHIP-8 or NES ROM.{Environment.NewLine}Details: {ex.Message}", "ROM Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            MessageBox.Show(Me, $"Failed to load {emulatorName} ROM. Please confirm the file is valid.{Environment.NewLine}Details: {ex.Message}", "ROM Load Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 
