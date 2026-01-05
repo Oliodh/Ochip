@@ -16,6 +16,7 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 - **Full CHIP-8 instruction set implementation** - Supports all standard CHIP-8 opcodes
 - **64x32 pixel display** - Monochrome graphics with configurable scaling
 - **ROM loading** - Load and run CHIP-8 ROM files (.ch8, .c8, .rom)
+- **NES ROM detection** - Detects Nintendo Entertainment System ROM files and provides informative feedback
 - **Emulation controls**:
   - Load ROM file via file picker
   - Reset emulation
@@ -56,11 +57,11 @@ CHIP-8 is an interpreted programming language developed in the mid-1970s. It was
 
 ### Loading ROMs
 
-Click the "Choose ROM..." button and select a CHIP-8 ROM file. The emulator supports the following file extensions:
-- `.ch8`
-- `.c8`
-- `.rom`
-- Any file (*.*)
+Click the "Choose ROM..." button and select a ROM file. The file picker allows you to select:
+- **CHIP-8 ROMs**: `.ch8`, `.c8`, `.rom` (fully supported)
+- **NES ROMs**: `.nes` (detected but not yet supported)
+
+When you select a NES ROM file, the emulator will detect it and display an informative message explaining that NES emulation is not yet supported. Only CHIP-8 ROM files will be loaded and executed.
 
 ### Keyboard Controls
 
