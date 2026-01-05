@@ -370,8 +370,12 @@ Public Class Form1
                     System.Drawing.Imaging.ImageLockMode.WriteOnly,
                     System.Drawing.Imaging.PixelFormat.Format32bppArgb)
 
-                System.Runtime.InteropServices.Marshal.Copy(_nes.DisplayBuffer, 0, bmpData.Scan0, _nes.DisplayBuffer.Length)
-                _nesBitmap.UnlockBits(bmpData)
+                Try
+                    System.Runtime.InteropServices.Marshal.Copy(_nes.DisplayBuffer, 0, bmpData.Scan0, _nes.DisplayBuffer.Length)
+                Finally
+                    ' Always unlock the bitmap, even if an exception occurs
+                    _nesBitmap.UnlockBits(bmpData)
+                End Try
 
                 e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor
                 e.Graphics.DrawImage(_nesBitmap, 0, 0, ClientSize.Width, ClientSize.Height)
