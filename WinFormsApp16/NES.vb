@@ -27,6 +27,7 @@ Public NotInheritable Class NES
         _cpu = New CPU6502(_memory)
         _ppu = New PPU(_memory, DisplayBuffer)
         _memory.SetPPU(_ppu)
+        _memory.SetControllers(Controller1, Controller2)
         Reset()
     End Sub
 
@@ -977,6 +978,11 @@ Public NotInheritable Class NES
         Private _chrRom As Byte()                     ' CHR-ROM from cartridge
         Private _mapper As Integer                    ' Mapper number
         Private _ppu As PPU                           ' Reference to PPU for register access
+        Private _controller1 As Boolean()             ' Reference to Controller 1 state
+        Private _controller2 As Boolean()             ' Reference to Controller 2 state
+        Private _controller1Shift As Byte             ' Controller 1 shift register
+        Private _controller2Shift As Byte             ' Controller 2 shift register
+        Private _controllerStrobe As Boolean          ' Controller strobe state
 
         Public Sub New()
             _prgRom = Array.Empty(Of Byte)()
@@ -985,6 +991,11 @@ Public NotInheritable Class NES
         
         Public Sub SetPPU(ppu As PPU)
             _ppu = ppu
+        End Sub
+
+        Public Sub SetControllers(controller1 As Boolean(), controller2 As Boolean())
+            _controller1 = controller1
+            _controller2 = controller2
         End Sub
 
         Public Sub LoadCartridge(romData As Byte())
@@ -1038,8 +1049,24 @@ Public NotInheritable Class NES
                     Return _ppu.ReadRegister(address)
                 End If
                 Return 0
+            ElseIf address = &H4016US Then
+                ' Controller 1 ($4016)
+                If _controller1 IsNot Nothing Then
+                    Dim result As Byte = If((_controller1Shift And 1) <> 0, CByte(1), CByte(0))
+                    _controller1Shift = CByte(_controller1Shift >> 1)
+                    Return result
+                End If
+                Return 0
+            ElseIf address = &H4017US Then
+                ' Controller 2 ($4017)
+                If _controller2 IsNot Nothing Then
+                    Dim result As Byte = If((_controller2Shift And 1) <> 0, CByte(1), CByte(0))
+                    _controller2Shift = CByte(_controller2Shift >> 1)
+                    Return result
+                End If
+                Return 0
             ElseIf address < &H4020US Then
-                ' APU and I/O registers
+                ' Other APU and I/O registers
                 Return 0
             ElseIf address >= &H8000US Then
                 ' PRG-ROM
@@ -1076,8 +1103,35 @@ Public NotInheritable Class NES
                 If _ppu IsNot Nothing Then
                     _ppu.WriteRegister(address, value)
                 End If
+            ElseIf address = &H4016US Then
+                ' Controller strobe ($4016)
+                Dim wasHigh As Boolean = _controllerStrobe
+                _controllerStrobe = (value And 1) <> 0
+                
+                ' On falling edge of strobe (high to low), latch controller state
+                If wasHigh AndAlso Not _controllerStrobe Then
+                    ' Load controller 1 state into shift register
+                    If _controller1 IsNot Nothing Then
+                        _controller1Shift = 0
+                        For i As Integer = 0 To 7
+                            If _controller1(i) Then
+                                _controller1Shift = CByte(_controller1Shift Or (1 << i))
+                            End If
+                        Next
+                    End If
+                    
+                    ' Load controller 2 state into shift register
+                    If _controller2 IsNot Nothing Then
+                        _controller2Shift = 0
+                        For i As Integer = 0 To 7
+                            If _controller2(i) Then
+                                _controller2Shift = CByte(_controller2Shift Or (1 << i))
+                            End If
+                        Next
+                    End If
+                End If
             ElseIf address < &H4020US Then
-                ' APU and I/O registers
+                ' Other APU and I/O registers
             ElseIf address >= &H6000US AndAlso address < &H8000US Then
                 ' SRAM (not implemented)
             End If
