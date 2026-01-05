@@ -67,6 +67,13 @@ Public NotInheritable Class NES
             ' PPU runs 3 times faster than CPU
             For i As Integer = 0 To (cpuCycles * 3) - 1
                 _ppu.ExecuteCycle()
+                
+                ' Check for NMI (triggered when VBlank starts and PPUCTRL bit 7 is set)
+                If _ppu.NmiTriggered Then
+                    _ppu.NmiTriggered = False
+                    _cpu.TriggerNMI()
+                End If
+                
                 If _ppu.FrameComplete Then
                     DrawFlag = True
                     _ppu.FrameComplete = False
@@ -111,6 +118,16 @@ Public NotInheritable Class NES
             P = FlagU Or FlagI
             ' Reset vector at $FFFC-$FFFD
             PC = CUShort(_memory.Read(&HFFFC) Or (CUShort(_memory.Read(&HFFFD)) << 8))
+        End Sub
+
+        Public Sub TriggerNMI()
+            ' NMI (Non-Maskable Interrupt)
+            ' Push PC and status to stack, then jump to NMI vector
+            Push(CByte(PC >> 8))
+            Push(CByte(PC And &HFF))
+            Push(CByte(P And (Not FlagB)))
+            SetFlag(FlagI, True)
+            PC = CUShort(_memory.Read(&HFFFAUS) Or (CUShort(_memory.Read(&HFFFBUS)) << 8))
         End Sub
 
         Public Function ExecuteInstruction() As Integer
@@ -739,6 +756,7 @@ Public NotInheritable Class NES
         Private _scanline As Integer
 
         Public FrameComplete As Boolean
+        Public NmiTriggered As Boolean
 
         ' PPU registers
         Private _ppuCtrl As Byte        ' $2000 PPUCTRL
@@ -781,6 +799,7 @@ Public NotInheritable Class NES
             _cycle = 0
             _scanline = 0
             FrameComplete = False
+            NmiTriggered = False
             _ppuCtrl = 0
             _ppuMask = 0
             _ppuStatus = &HA0  ' Bits 7 and 5 set (VBlank and sprite overflow flags cleared, unused bit set)
@@ -798,6 +817,20 @@ Public NotInheritable Class NES
         Public Sub ExecuteCycle()
             ' Simplified PPU cycle execution
             _cycle += 1
+
+            ' Set VBlank flag at scanline 241 and trigger NMI if enabled
+            If _scanline = 241 AndAlso _cycle = 1 Then
+                _ppuStatus = CByte(_ppuStatus Or &H80) ' Set VBlank flag (bit 7)
+                ' Trigger NMI if PPUCTRL bit 7 is set
+                If (_ppuCtrl And &H80) <> 0 Then
+                    NmiTriggered = True
+                End If
+            End If
+
+            ' Clear VBlank flag at scanline 261 (pre-render scanline)
+            If _scanline = 261 AndAlso _cycle = 1 Then
+                _ppuStatus = CByte(_ppuStatus And (Not &H80)) ' Clear VBlank flag
+            End If
 
             If _cycle >= 341 Then
                 _cycle = 0
