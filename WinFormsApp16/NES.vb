@@ -262,7 +262,7 @@ Public NotInheritable Class NES
             FrameComplete = False
             _ppuCtrl = 0
             _ppuMask = 0
-            _ppuStatus = &HA0
+            _ppuStatus = &HA0  ' Bits 7 and 5 set (VBlank and sprite overflow flags cleared, unused bit set)
             _oamAddr = 0
             _ppuScroll = 0
             _ppuAddr = 0
@@ -436,10 +436,10 @@ Public NotInheritable Class NES
                     _addressLatch = Not _addressLatch
                 Case &H6US ' PPUADDR
                     If Not _addressLatch Then
-                        ' First write: high byte
-                        _ppuAddr = CUShort((CUShort(value) << 8) Or (_ppuAddr And &HFFUS))
+                        ' First write: high byte (clear low byte, set high byte)
+                        _ppuAddr = CUShort((CUShort(value) << 8) Or (_ppuAddr And &H00FFUS))
                     Else
-                        ' Second write: low byte
+                        ' Second write: low byte (clear high byte of previous high write, set low byte)
                         _ppuAddr = CUShort((_ppuAddr And &HFF00US) Or value)
                     End If
                     _addressLatch = Not _addressLatch
